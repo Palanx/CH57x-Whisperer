@@ -37,9 +37,12 @@ struct ReadMapping {
 
 let keyNames: [UInt8: String] = Dictionary(keyCodes.map { ($1, $0) }) { first, _ in first }
 
-let mediaNames: [UInt8: String] = [
+let mediaNames: [UInt16: String] = [
     0xB5: "next", 0xB6: "prev", 0xB7: "stop", 0xCD: "playpause",
     0xE2: "mute", 0xE9: "volumeup", 0xEA: "volumedown",
+    0x6F: "brightnessup", 0x70: "brightnessdown",
+    0x183: "multimedia", 0x18A: "email", 0x192: "calculator", 0x194: "mycomputer",
+    0x223: "wwwhome", 0x224: "wwwback", 0x225: "wwwforward", 0x227: "wwwrefresh",
 ]
 
 func modifierString(_ bits: UInt8) -> String {
@@ -52,8 +55,9 @@ func decodeMapping(_ buf: [UInt8]) -> ReadMapping? {
     var parts: [String] = []
 
     switch buf[4] {
-    case 0x02: // media key
-        parts.append(mediaNames[buf[11]] ?? String(format: "media-0x%02x", buf[11]))
+    case 0x02: // media key, consumer usage u16 LE
+        let code = UInt16(buf[11]) | UInt16(buf[12]) << 8
+        parts.append(mediaNames[code] ?? String(format: "media-0x%04x", code))
     case 0x03: // mouse
         var chunk = modifierString(buf[11])
         let click = [0x01: "click", 0x02: "rclick", 0x04: "mclick"][Int(buf[12])]
@@ -89,7 +93,7 @@ func keyLabel(_ id: UInt8) -> String {
     return "knob\(n) \(action)"
 }
 
-func readConfig(layer: UInt8?) throws {
+func fetchMappings(layers: [UInt8]) throws -> (keys: UInt8, knobs: UInt8, mappings: [ReadMapping]) {
     let keyboard = try KeyboardDevice.open()
     keyboard.enableReading()
 
@@ -100,15 +104,25 @@ func readConfig(layer: UInt8?) throws {
         keys = first[2]
         knobs = first[3]
     }
+
+    var mappings: [ReadMapping] = []
+    for l in layers {
+        try keyboard.send(Ch57xRead.readLayer(keys: keys, knobs: knobs, layer: l))
+        mappings += keyboard.collectReports().compactMap(decodeMapping)
+    }
+    return (keys, knobs, mappings)
+}
+
+func readConfig(layer: UInt8?) throws {
+    let layers: [UInt8] = layer.map { [$0] } ?? [1, 2, 3]
+    let (keys, knobs, mappings) = try fetchMappings(layers: layers)
     print("device: \(keys) keys, \(knobs) knobs")
 
-    for l in layer.map({ [$0] }) ?? [1, 2, 3] {
-        try keyboard.send(Ch57xRead.readLayer(keys: keys, knobs: knobs, layer: l))
-        let responses = keyboard.collectReports()
+    for l in layers {
+        let layerMappings = mappings.filter { $0.layer == l }
         print("layer \(l):")
-        if responses.isEmpty { print("  (no response)") }
-        for response in responses {
-            guard let mapping = decodeMapping(response) else { continue }
+        if layerMappings.isEmpty { print("  (no response)") }
+        for mapping in layerMappings {
             let delay = mapping.delayMS > 0 ? " (delay \(mapping.delayMS)ms)" : ""
             print("  \(keyLabel(mapping.keyNumber)): \(mapping.text.isEmpty ? "(unbound)" : mapping.text)\(delay)")
         }

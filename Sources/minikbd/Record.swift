@@ -22,6 +22,12 @@ let virtualKeyNames: [Int64: String] = [
     115: "home", 116: "pageup", 117: "delete", 118: "f4", 119: "end",
     120: "f2", 121: "pagedown", 122: "f1",
     123: "left", 124: "right", 125: "down", 126: "up",
+    // ISO extra key (º/ª on Spanish Macs) and the numeric keypad
+    10: "intlbackslash",
+    65: "kpdot", 67: "kpasterisk", 69: "kpplus", 71: "numlock", 75: "kpslash",
+    76: "kpenter", 78: "kpminus", 81: "kpequal",
+    82: "kp0", 83: "kp1", 84: "kp2", 85: "kp3", 86: "kp4",
+    87: "kp5", 88: "kp6", 89: "kp7", 91: "kp8", 92: "kp9",
 ]
 
 private final class Recorder {
@@ -32,6 +38,9 @@ func recordChords() throws -> [String] {
     let recorder = Recorder()
     let callback: CGEventTapCallBack = { _, _, event, userInfo in
         let recorder = Unmanaged<Recorder>.fromOpaque(userInfo!).takeUnretainedValue()
+        if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+            return Unmanaged.passUnretained(event) // held key, not a new chord
+        }
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         if keycode == 53 { // esc ends recording
             CFRunLoopStop(CFRunLoopGetMain())

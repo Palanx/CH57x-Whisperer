@@ -43,6 +43,24 @@ enum Ch57x {
         return messages + finish
     }
 
+    /// code: USB HID consumer usage (playpause=0xCD, calculator=0x192), u16 LE on the wire.
+    static func bindMedia(keyID: UInt8, layer: UInt8, code: UInt16) -> [[UInt8]] {
+        precondition((1...3).contains(layer), "layer must be 1-3")
+        return [pad([0x03, 0xfe, keyID, layer, 0x02, 0, 0, 0, 0, 0,
+                     0, UInt8(code & 0xff), UInt8(code >> 8)])] + finish
+    }
+
+    /// One mouse action: buttons (left=1 right=2 middle=4) or wheel (1 up, -1 down), not both.
+    static func bindMouse(keyID: UInt8, layer: UInt8, modifiers: UInt8 = 0,
+                          buttons: UInt8 = 0, wheel: Int8 = 0) -> [[UInt8]] {
+        precondition((1...3).contains(layer), "layer must be 1-3")
+        precondition((buttons != 0) != (wheel != 0), "exactly one of buttons/wheel")
+        let payload: [UInt8] = wheel != 0
+            ? [0x03, modifiers, 0, 0, 0, UInt8(bitPattern: wheel)]
+            : [0x01, modifiers, buttons]
+        return [pad([0x03, 0xfe, keyID, layer, 0x03, 0, 0, 0, 0, 0] + payload)] + finish
+    }
+
     /// mode: 0=off 1=backlight 2=shock 3=shock2 4=press 5=backlight-white
     /// color: 0=white 1=red 2=orange 3=yellow 4=green 5=cyan 6=blue 7=purple
     static func setLED(layer: UInt8, mode: UInt8, color: UInt8) -> [[UInt8]] {
