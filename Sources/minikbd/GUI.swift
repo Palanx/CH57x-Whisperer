@@ -46,6 +46,8 @@ struct ContentView: View {
     @State private var ledColor = "cyan"
     @State private var composerMods: Set<String> = []
     @State private var composerKey = "a"
+    @State private var keyPickerShown = false
+    @State private var keyQuery = ""
 
     var body: some View {
         VStack(spacing: 12) {
@@ -149,12 +151,46 @@ struct ContentView: View {
                     ))
                     .toggleStyle(.button)
                 }
-                Picker("", selection: $composerKey) {
-                    ForEach(keyGroups, id: \.0) { group, keys in
-                        Section(group) {
-                            ForEach(keys, id: \.self) { Text($0) }
+                Button {
+                    keyQuery = ""
+                    keyPickerShown = true
+                } label: {
+                    HStack {
+                        Text(composerKey)
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                    .frame(minWidth: 70)
+                }
+                .popover(isPresented: $keyPickerShown, arrowEdge: .bottom) {
+                    VStack(spacing: 6) {
+                        TextField("search key…", text: $keyQuery)
+                            .textFieldStyle(.roundedBorder)
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(keyGroups, id: \.0) { group, keys in
+                                    let hits = keys.filter {
+                                        keyQuery.isEmpty || $0.contains(keyQuery.lowercased())
+                                    }
+                                    if !hits.isEmpty {
+                                        Text(group).font(.caption).foregroundStyle(.secondary)
+                                            .padding(.top, 4)
+                                        ForEach(hits, id: \.self) { key in
+                                            Button(key) {
+                                                composerKey = key
+                                                keyPickerShown = false
+                                            }
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(key == composerKey ? Color.accentColor : .primary)
+                                        }
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                    .padding(10)
+                    .frame(width: 190, height: 280)
                 }
                 Button("Add step") {
                     let mods = ["ctrl", "shift", "alt", "cmd"].filter(composerMods.contains)
