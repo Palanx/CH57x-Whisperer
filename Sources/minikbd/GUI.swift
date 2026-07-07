@@ -207,11 +207,9 @@ struct ContentView: View {
         .onChange(of: layer) { _ in select(selected) }
     }
 
-    /// visible ⓘ icon; hover it for the explanation
+    /// visible ⓘ icon; click for a popover, hover for the classic tooltip
     private func info(_ text: String) -> some View {
-        Image(systemName: "info.circle")
-            .foregroundStyle(.secondary)
-            .help(text)
+        InfoButton(text: text)
     }
 
     private var tokens: [String] {
@@ -303,6 +301,24 @@ struct ContentView: View {
             status = "bound \(keyLabel(selected)) on layer \(layer)"
         } catch {
             status = "\(error)"
+        }
+    }
+}
+
+private struct InfoButton: View {
+    let text: String
+    @State private var shown = false
+
+    var body: some View {
+        Button { shown.toggle() } label: {
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(text)
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            Text(text)
+                .frame(width: 300, alignment: .leading)
+                .padding()
         }
     }
 }
