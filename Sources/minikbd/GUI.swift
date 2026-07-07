@@ -224,7 +224,7 @@ struct ContentView: View {
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
-                LEDDot(color: ledSwiftUIColor, active: ledMode != "off")
+                LEDDot(color: ledSwiftUIColor, mode: ledMode)
                     .id("\(layer)-\(ledMode)-\(ledColor)") // restart the breathing on any change
                 Spacer()
                 Picker("", selection: $ledMode) {
@@ -384,21 +384,32 @@ struct ContentView: View {
     }
 }
 
-/// tiny LED preview: breathes in the selected color, dim gray when off
+/// tiny LED preview, one look per mode: off = gray, backlight = steady glow,
+/// shock/shock2 = breathing (shock2 faster), press = dim until a key would light it
 private struct LEDDot: View {
     let color: Color
-    let active: Bool
+    let mode: String
     @State private var dim = false
 
+    private var breathDuration: Double? {
+        switch mode {
+        case "shock": 1.0
+        case "shock2": 0.45
+        default: nil // off, backlight, press: static
+        }
+    }
+
     var body: some View {
+        let off = mode == "off"
+        let press = mode == "press"
         Circle()
-            .fill(active ? color : Color.gray.opacity(0.35))
+            .fill(off ? Color.gray.opacity(0.35) : color)
             .frame(width: 11, height: 11)
-            .shadow(color: active ? color.opacity(0.8) : .clear, radius: dim ? 1 : 5)
-            .opacity(active && dim ? 0.25 : 1)
+            .shadow(color: off || press ? .clear : color.opacity(0.8), radius: dim ? 1 : 5)
+            .opacity(off ? 1 : press ? 0.35 : dim ? 0.25 : 1)
             .onAppear {
-                guard active else { return }
-                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                guard let duration = breathDuration else { return }
+                withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
                     dim = true
                 }
             }

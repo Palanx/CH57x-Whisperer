@@ -21,7 +21,7 @@ Under `Sources/minikbd/`:
 - `Device.swift` — IOKit transport. Opens the keyboard's **vendor HID interface** (usage page `0xFF00`; the device also exposes a normal keyboard interface on usage page 1 — never open that one, it triggers Input Monitoring permissions). Sends via `IOHIDDeviceSetReport`: report ID = first byte (0x03), data = remaining 63 bytes.
 - `Read.swift` — config read-back (queries + response decoding, see protocol facts below).
 - `Record.swift` — listen-only CGEvent tap that records keystrokes as chord tokens (filters auto-repeat).
-- `GUI.swift` — SwiftUI configurator (`minikbd gui`): layer tabs, key/knob grid, chord composer (modifier toggles + key picker, covers F13–F24), colored chip preview of each step (cyan=combination, magenta=named key, orange=media/mouse, red=invalid), media/mouse actions menu, LED section, tooltips on every control. Runs in the CLI binary via NSApplication, no app bundle.
+- `GUI.swift` — SwiftUI configurator (`minikbd gui`): layer tabs, key/knob grid, chord composer (modifier toggles + searchable key picker, covers F13–F24), colored chip preview of each step (cyan=combination, magenta=named key, orange=media/mouse, red=invalid), media/mouse actions menu, LED section, clickable ⓘ info popovers. The LED preview dot mimics the mode (off=gray, backlight=steady, shock/shock2=breathing, press=dim static); LED state can't be read from the device, so the last value Set is remembered per layer in UserDefaults. Runs in the CLI binary via NSApplication, no app bundle.
 - `main.swift` — CLI parsing and dispatch. Token tables (`keyCodes`, `mediaCodes`, `mouseButtons`) and `bindMessages` are shared with the GUI, so `read` output is always valid bind input. Spanish ISO aliases (`ñ`, `ç`) parse to the matching HID codes; unnamed codes print/parse as `0xNN`.
 
 ## Protocol facts (CH57x 884x variant)
@@ -46,6 +46,7 @@ Under `Sources/minikbd/`:
 - macOS has no virtual keycodes for F21–F24 (`Events.h` ends at `kVK_F20`), so apps never see those keys — but the HID events DO arrive (verified on this machine: `hidutil` UserKeyMapping remap of F24 works). So F21–F24 are usable via hidutil remap or by reading the raw HID device; hidutil remaps reset on reboot.
 - Bluetooth mode drops extended F-keys; anything clever must assume the dongle/USB connection.
 - Bindings persist in the keyboard (it has a battery); a bad write only costs re-binding a key, not a brick.
+- Disconnected keyboard is handled gracefully everywhere (verified): CLI commands print `error: keyboard not found — is it connected by USB?`, the GUI shows the same in its status line and keeps running.
 
 ## Roadmap (agreed with user)
 
