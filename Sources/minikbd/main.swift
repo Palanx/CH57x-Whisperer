@@ -137,6 +137,7 @@ func usage() -> Never {
           chord: a | ctrl-shift-t | cmd-f13 | ... (up to \(Ch57x.maxAccordsPerKey) chords)
       minikbd led <layer 1-3> off|backlight-<color>|shock-<color>|shock2-<color>|press-<color>
           colors: white red orange yellow green cyan blue purple
+      minikbd read [layer 1-3]     print bindings stored in the keyboard
     """)
     exit(2)
 }
@@ -148,6 +149,8 @@ do {
     switch args.first {
     case nil, "probe": probe()
     case "selftest": selftest()
+    case "read":
+        try readConfig(layer: args.count > 1 ? parseLayer(args[1]) : nil)
     case "bind":
         args.removeFirst()
         var delayMS = 0

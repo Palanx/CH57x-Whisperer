@@ -29,7 +29,7 @@ Three files under `Sources/minikbd/`:
 - Modifier bitmask: ctrl=1, shift=2, alt=4, cmd=8. Key codes are standard USB HID usages (a=0x04, f13=0x68).
 - Max 18 chords per key; delay message type `0x05`, u16 LE ms, max 6000.
 - LED: `[0x03, 0xfe, 0xb0, layer, 0x08, 0,0,0,0,0, 0x01, 0, (color<<4)|mode]` + `[03 fd fe ff]`. Modes: 0=off 1=backlight 2=shock 3=shock2 4=press 5=backlight-white. Colors: 0=white 1=red 2=orange 3=yellow 4=green 5=cyan 6=blue 7=purple.
-- The keyboard is write-only so far: config read-back is not implemented anywhere (vendor app does it, so the device supports it — protocol unknown).
+- Read-back (see `Read.swift`, ported from [kamaaina/macropad_tool](https://github.com/kamaaina/macropad_tool)): send device-type query `0x03 0xfb...`, then per-layer `0x03 0xfa keys knobs layer...`; device answers one input report per key/knob action shaped like the bind message (delay is big-endian in responses). Query tails are verbatim USB captures — replay them exactly.
 
 ## Hardware constraints
 
@@ -40,7 +40,7 @@ Three files under `Sources/minikbd/`:
 ## Roadmap (agreed with user)
 
 1. ✅ Protocol port + bind/led CLI
-2. Config read-back
+2. ✅ Config read-back (`minikbd read`)
 3. Macro recording from the real keyboard (CGEvent tap, needs Input Monitoring)
 4. SwiftUI GUI (12-key + 2-knob grid, 3 layer tabs)
 5. Host-side action engine: keyboard sends F13–F20, background agent runs scripts/actions

@@ -6,13 +6,22 @@ struct MiniKeyboardError: Error, CustomStringConvertible {
     init(_ message: String) { description = message }
 }
 
-struct KeyboardDevice {
+final class KeyboardDevice {
     static let vendorID = 0x1189
     static let productID = 0x8840
     static let vendorUsagePage = 0xFF00
 
     let device: IOHIDDevice
-    let manager: IOHIDManager // keeps the HID session alive for the device handle
+    private let manager: IOHIDManager // keeps the HID session alive for the device handle
+    private let reportBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 65)
+    private var reports: [[UInt8]] = []
+
+    private init(device: IOHIDDevice, manager: IOHIDManager) {
+        self.device = device
+        self.manager = manager
+    }
+
+    deinit { reportBuffer.deallocate() }
 
     static func open() throws -> KeyboardDevice {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
@@ -45,5 +54,37 @@ struct KeyboardDevice {
 
     func send(_ messages: [[UInt8]]) throws {
         for message in messages { try send(message) }
+    }
+
+    /// Start capturing input reports (device responses). Call once before collectReports.
+    func enableReading() {
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDDeviceRegisterInputReportCallback(device, reportBuffer, 65, { context, _, _, _, _, report, length in
+            guard let context else { return }
+            let keyboard = Unmanaged<KeyboardDevice>.fromOpaque(context).takeUnretainedValue()
+            var bytes = Array(UnsafeBufferPointer(start: report, count: length))
+            if bytes.first != 0x03 { bytes.insert(0x03, at: 0) } // some stacks strip the report ID
+            keyboard.reports.append(bytes)
+        }, context)
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+    }
+
+    /// Pump the run loop and return reports received, stopping after `quiet` seconds
+    /// of silence (or `timeout` seconds overall, whichever comes first).
+    func collectReports(quiet: TimeInterval = 0.3, timeout: TimeInterval = 5) -> [[UInt8]] {
+        defer { reports = [] }
+        let deadline = Date().addingTimeInterval(timeout)
+        var seen = reports.count
+        var lastChange = Date()
+        while Date() < deadline {
+            CFRunLoopRunInMode(.defaultMode, 0.05, false)
+            if reports.count != seen {
+                seen = reports.count
+                lastChange = Date()
+            } else if !reports.isEmpty && Date().timeIntervalSince(lastChange) > quiet {
+                break
+            }
+        }
+        return reports
     }
 }
