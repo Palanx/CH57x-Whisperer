@@ -42,7 +42,7 @@ struct ContentView: View {
     @State private var selected: UInt8 = 1
     @State private var chordText = ""
     @State private var status = "click Read to load current bindings"
-    @State private var ledMode = "backlight"
+    @State private var ledMode = "off"
     @State private var ledColor = "cyan"
     @State private var composerMods: Set<String> = []
     @State private var composerKey = "a"
@@ -77,12 +77,18 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Text(keyLabel(selected)).bold()
                     info("""
-                    The key being edited — click any key or knob action above to select it. \
-                    Its binding is one keystroke per word, typed in order: "h i" presses h \
-                    then i. Join simultaneous keys with dashes (ctrl-shift-t). Keys that \
-                    can't be typed have names: space, minus, f24, kpdot, ñ… Chips below \
-                    preview each step: cyan = combination, magenta = named key, orange = \
-                    media/mouse action, red = invalid. Write sends it to the keyboard.
+                    **Binding field** — edits the key selected above.
+
+                    One keystroke per word, typed in order:
+                    • `h i` types *h*, then *i*
+                    • `ctrl-shift-t` presses the keys together
+                    • un-typeable keys have names: `space`, `minus`, `f24`, `kpdot`, `ñ`
+
+                    The chips below preview each step:
+                    cyan = combination · magenta = named key
+                    orange = media/mouse · red = invalid
+
+                    **Write** sends the binding to the keyboard.
                     """)
                 }
                 .fixedSize()
@@ -138,9 +144,12 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Label("compose", systemImage: "plus.square.on.square")
                     info("""
-                    Build a keystroke without typing it — useful for keys your Mac doesn't \
-                    have, like F13–F24. Toggle modifiers, pick the key, then Add step to \
-                    append it to the binding field.
+                    **Chord composer** — build a keystroke without typing it. \
+                    Useful for keys your Mac doesn't have, like F13–F24.
+
+                    1. Toggle the modifiers you want
+                    2. Pick the key (the list is searchable)
+                    3. **Add step** appends it to the binding field
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
@@ -205,12 +214,18 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Label("led", systemImage: "lightbulb")
                     info("""
-                    Backlight effect for the layer selected above. Pick a mode and a color, \
-                    then Set. The keyboard can't report its current LED state, so the pickers \
-                    always start from defaults.
+                    **LED backlight** — for the layer selected above.
+
+                    Pick a mode and a color, then **Set**. \
+                    The dot previews your choice.
+
+                    The keyboard can't report its LED state, so this \
+                    shows the last value set from here — *off* if unknown.
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
+                LEDDot(color: ledSwiftUIColor, active: ledMode != "off")
+                    .id("\(layer)-\(ledMode)-\(ledColor)") // restart the breathing on any change
                 Spacer()
                 Picker("", selection: $ledMode) {
                     ForEach(["off", "backlight", "shock", "shock2", "press"], id: \.self) { Text($0) }
@@ -230,9 +245,11 @@ struct ContentView: View {
             HStack {
                 Button("Read from keyboard", action: read)
                 info("""
-                Load every binding stored in the keyboard — all 12 keys and both knobs \
-                across the 3 layers — and show them in the grid. Do this first; the \
-                keyboard keeps its config even unplugged.
+                **Read from keyboard** — loads every stored binding: \
+                12 keys + both knobs, all 3 layers.
+
+                Do this first. The keyboard keeps its config even unplugged, \
+                so what you see here is what it will really do.
                 """)
                 Spacer()
                 Text(status).foregroundStyle(.secondary).lineLimit(1)
@@ -240,7 +257,11 @@ struct ContentView: View {
         }
         .padding()
         .frame(minWidth: 500)
-        .onChange(of: layer) { _ in select(selected) }
+        .onChange(of: layer) { _ in
+            select(selected)
+            loadLED()
+        }
+        .onAppear(perform: loadLED)
     }
 
     /// visible ⓘ icon; click for a popover, hover for the classic tooltip
@@ -317,11 +338,33 @@ struct ContentView: View {
         }
     }
 
+    private var ledSwiftUIColor: Color {
+        switch ledColor {
+        case "white": .white
+        case "red": .red
+        case "orange": .orange
+        case "yellow": .yellow
+        case "green": .green
+        case "cyan": .cyan
+        case "blue": .blue
+        default: .purple
+        }
+    }
+
+    /// The device can't report its LED state, so remember what we last set per layer.
+    private func loadLED() {
+        let saved = UserDefaults.standard.string(forKey: "led.layer\(layer)")?
+            .split(separator: " ").map(String.init) ?? []
+        ledMode = saved.count == 2 ? saved[0] : "off"
+        ledColor = saved.count == 2 ? saved[1] : "cyan"
+    }
+
     private func setLED() {
         do {
             let spec = ledMode == "off" ? "off" : "\(ledMode)-\(ledColor)"
             let (mode, color) = try parseLED(spec)
             try KeyboardDevice.open().send(Ch57x.setLED(layer: layer, mode: mode, color: color))
+            UserDefaults.standard.set("\(ledMode) \(ledColor)", forKey: "led.layer\(layer)")
             status = "led on layer \(layer) set to \(spec)"
         } catch {
             status = "\(error)"
@@ -341,6 +384,27 @@ struct ContentView: View {
     }
 }
 
+/// tiny LED preview: breathes in the selected color, dim gray when off
+private struct LEDDot: View {
+    let color: Color
+    let active: Bool
+    @State private var dim = false
+
+    var body: some View {
+        Circle()
+            .fill(active ? color : Color.gray.opacity(0.35))
+            .frame(width: 11, height: 11)
+            .shadow(color: active ? color.opacity(0.8) : .clear, radius: dim ? 1 : 5)
+            .opacity(active && dim ? 0.25 : 1)
+            .onAppear {
+                guard active else { return }
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                    dim = true
+                }
+            }
+    }
+}
+
 private struct InfoButton: View {
     let text: String
     @State private var shown = false
@@ -352,8 +416,9 @@ private struct InfoButton: View {
         .buttonStyle(.plain)
         .help(text)
         .popover(isPresented: $shown, arrowEdge: .bottom) {
-            Text(text)
-                .frame(width: 300, alignment: .leading)
+            Text(.init(text)) // .init: render the markdown in the string
+                .frame(width: 320, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding()
         }
     }
