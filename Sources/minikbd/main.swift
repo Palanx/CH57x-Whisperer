@@ -138,6 +138,9 @@ func usage() -> Never {
       minikbd led <layer 1-3> off|backlight-<color>|shock-<color>|shock2-<color>|press-<color>
           colors: white red orange yellow green cyan blue purple
       minikbd read [layer 1-3]     print bindings stored in the keyboard
+      minikbd record [<layer 1-3> <key>]
+          record chords from your real keyboard (ESC ends); with layer+key,
+          bind the result immediately
     """)
     exit(2)
 }
@@ -151,6 +154,21 @@ do {
     case "selftest": selftest()
     case "read":
         try readConfig(layer: args.count > 1 ? parseLayer(args[1]) : nil)
+    case "record":
+        args.removeFirst()
+        let chords = try recordChords()
+        guard !chords.isEmpty else { throw MiniKeyboardError("nothing recorded") }
+        print("recorded: \(chords.joined(separator: " "))")
+        if args.count >= 2 {
+            let layer = try parseLayer(args[0])
+            let keyID = try parseKeyID(args[1])
+            let accords = try chords.map(parseChord)
+            let keyboard = try KeyboardDevice.open()
+            try keyboard.send(Ch57x.bindKey(keyID: keyID, layer: layer, accords: accords))
+            print("bound \(args[1]) on layer \(layer)")
+        } else {
+            print("bind it with: minikbd bind <layer> <key> \(chords.joined(separator: " "))")
+        }
     case "bind":
         args.removeFirst()
         var delayMS = 0

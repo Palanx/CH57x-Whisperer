@@ -33,7 +33,7 @@ Three files under `Sources/minikbd/`:
 
 ## Hardware constraints
 
-- macOS has no virtual keycodes for F21–F24; F13–F20 are the usable "ghost" trigger keys (verified by the user on this machine).
+- macOS has no virtual keycodes for F21–F24 (`Events.h` ends at `kVK_F20`), so apps never see those keys — but the HID events DO arrive (verified on this machine: `hidutil` UserKeyMapping remap of F24 works). So F21–F24 are usable via hidutil remap or by reading the raw HID device; hidutil remaps reset on reboot.
 - Bluetooth mode drops extended F-keys; anything clever must assume the dongle/USB connection.
 - Bindings persist in the keyboard (it has a battery); a bad write only costs re-binding a key, not a brick.
 
