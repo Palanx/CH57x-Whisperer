@@ -31,6 +31,11 @@ Three files under `Sources/minikbd/`:
 - LED: `[0x03, 0xfe, 0xb0, layer, 0x08, 0,0,0,0,0, 0x01, 0, (color<<4)|mode]` + `[03 fd fe ff]`. Modes: 0=off 1=backlight 2=shock 3=shock2 4=press 5=backlight-white. Colors: 0=white 1=red 2=orange 3=yellow 4=green 5=cyan 6=blue 7=purple.
 - Read-back (see `Read.swift`, ported from [kamaaina/macropad_tool](https://github.com/kamaaina/macropad_tool)): send device-type query `0x03 0xfb...`, then per-layer `0x03 0xfa keys knobs layer...`; device answers one input report per key/knob action shaped like the bind message (delay is big-endian in responses). Query tails are verbatim USB captures — replay them exactly.
 
+## macOS permissions
+
+- `minikbd record` needs **Input Monitoring** (System Settings > Privacy & Security > Input Monitoring; open it directly with `open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"`). The first failed run adds the terminal to the list; after enabling the toggle, the terminal must be **fully restarted** for the grant to take effect.
+- Talking to the config interface (usage page `0xFF00`) needs no permission — only event taps do.
+
 ## Hardware constraints
 
 - macOS has no virtual keycodes for F21–F24 (`Events.h` ends at `kVK_F20`), so apps never see those keys — but the HID events DO arrive (verified on this machine: `hidutil` UserKeyMapping remap of F24 works). So F21–F24 are usable via hidutil remap or by reading the raw HID device; hidutil remaps reset on reboot.
