@@ -33,10 +33,11 @@ struct KeyboardDevice {
     }
 
     /// message: 64 bytes starting with report ID 0x03 (as on the wire).
+    /// For numbered reports macOS wants the report ID byte kept in the data,
+    /// same as hidapi's mac backend does.
     func send(_ message: [UInt8]) throws {
-        var data = Array(message.dropFirst())
         let status = IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput,
-                                          CFIndex(message[0]), &data, data.count)
+                                          CFIndex(message[0]), message, message.count)
         guard status == kIOReturnSuccess else {
             throw MiniKeyboardError(String(format: "write failed: 0x%08x", status))
         }
