@@ -83,7 +83,7 @@ struct ContentView: View {
                     media/mouse action, red = invalid. Write sends it to the keyboard.
                     """)
                 }
-                .frame(width: 110, alignment: .leading)
+                .fixedSize()
                 TextField("chords, e.g. ctrl-shift-t f13 — or pick an action →", text: $chordText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(write)
@@ -175,6 +175,7 @@ struct ContentView: View {
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
+                Spacer()
                 Picker("", selection: $ledMode) {
                     ForEach(["off", "backlight", "shock", "shock2", "press"], id: \.self) { Text($0) }
                 }
@@ -184,8 +185,8 @@ struct ContentView: View {
                 }
                 .frame(width: 120)
                 .disabled(ledMode == "off")
-                Button("Set", action: setLED)
                 Spacer()
+                Button("Set", action: setLED)
             }
 
             Divider()
