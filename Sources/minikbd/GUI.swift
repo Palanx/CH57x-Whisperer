@@ -72,22 +72,21 @@ struct ContentView: View {
             Divider()
 
             HStack {
-                Text(keyLabel(selected)).bold().frame(width: 90, alignment: .leading)
-                    .help("""
+                HStack(spacing: 4) {
+                    Text(keyLabel(selected)).bold()
+                    info("""
                     The key being edited — click any key or knob action above to select it. \
-                    Its current binding appears in the field; Write sends your changes to \
-                    the keyboard.
+                    Its binding is one keystroke per word, typed in order: "h i" presses h \
+                    then i. Join simultaneous keys with dashes (ctrl-shift-t). Keys that \
+                    can't be typed have names: space, minus, f24, kpdot, ñ… Chips below \
+                    preview each step: cyan = combination, magenta = named key, orange = \
+                    media/mouse action, red = invalid. Write sends it to the keyboard.
                     """)
+                }
+                .frame(width: 110, alignment: .leading)
                 TextField("chords, e.g. ctrl-shift-t f13 — or pick an action →", text: $chordText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(write)
-                    .help("""
-                    One keystroke per word, typed in order: "h i" presses h then i. \
-                    Join simultaneous keys with dashes (ctrl-shift-t). Keys that can't be \
-                    typed have names: space, minus, f24, kpdot, ñ… Chips below preview \
-                    each step: cyan = combination, magenta = named key, orange = media/mouse \
-                    action, red = invalid.
-                    """)
                 Menu {
                     Section("Media") {
                         ForEach(mediaActions, id: \.0) { token, label in
@@ -113,33 +112,36 @@ struct ContentView: View {
                     .help("Write the field's binding to the selected key. It persists inside the keyboard.")
             }
 
-            if !tokens.isEmpty {
-                HStack {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 4) {
-                            ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
-                                Text(token)
-                                    .font(.caption.monospaced())
-                                    .padding(.horizontal, 7).padding(.vertical, 3)
-                                    .background(chipColor(token).opacity(0.18), in: Capsule())
-                                    .foregroundStyle(chipColor(token))
-                            }
+            HStack {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
+                            Text(token)
+                                .font(.caption.monospaced())
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(chipColor(token).opacity(0.18), in: Capsule())
+                                .foregroundStyle(chipColor(token))
                         }
                     }
+                }
+                if !tokens.isEmpty {
                     Text("\(tokens.count)/\(Ch57x.maxAccordsPerKey)")
                         .font(.caption)
                         .foregroundStyle(tokens.count > Ch57x.maxAccordsPerKey ? .red : .secondary)
                 }
             }
+            .frame(height: 20) // reserved so the window doesn't jump when chips appear
 
             HStack {
-                Label("compose", systemImage: "plus.square.on.square")
-                    .frame(width: 90, alignment: .leading)
-                    .help("""
+                HStack(spacing: 4) {
+                    Label("compose", systemImage: "plus.square.on.square")
+                    info("""
                     Build a keystroke without typing it — useful for keys your Mac doesn't \
                     have, like F13–F24. Toggle modifiers, pick the key, then Add step to \
                     append it to the binding field.
                     """)
+                }
+                .frame(width: 110, alignment: .leading)
                 ForEach(["ctrl", "shift", "alt", "cmd"], id: \.self) { mod in
                     Toggle(mod, isOn: Binding(
                         get: { composerMods.contains(mod) },
@@ -164,13 +166,15 @@ struct ContentView: View {
             Divider()
 
             HStack {
-                Label("led", systemImage: "lightbulb")
-                    .frame(width: 90, alignment: .leading)
-                    .help("""
+                HStack(spacing: 4) {
+                    Label("led", systemImage: "lightbulb")
+                    info("""
                     Backlight effect for the layer selected above. Pick a mode and a color, \
                     then Set. The keyboard can't report its current LED state, so the pickers \
                     always start from defaults.
                     """)
+                }
+                .frame(width: 110, alignment: .leading)
                 Picker("", selection: $ledMode) {
                     ForEach(["off", "backlight", "shock", "shock2", "press"], id: \.self) { Text($0) }
                 }
@@ -188,18 +192,25 @@ struct ContentView: View {
 
             HStack {
                 Button("Read from keyboard", action: read)
-                    .help("""
-                    Load every binding stored in the keyboard — all 12 keys and both knobs \
-                    across the 3 layers — and show them in the grid. Do this first; the \
-                    keyboard keeps its config even unplugged.
-                    """)
+                info("""
+                Load every binding stored in the keyboard — all 12 keys and both knobs \
+                across the 3 layers — and show them in the grid. Do this first; the \
+                keyboard keeps its config even unplugged.
+                """)
                 Spacer()
                 Text(status).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .padding()
-        .frame(minWidth: 500, minHeight: 580)
+        .frame(minWidth: 500)
         .onChange(of: layer) { _ in select(selected) }
+    }
+
+    /// visible ⓘ icon; hover it for the explanation
+    private func info(_ text: String) -> some View {
+        Image(systemName: "info.circle")
+            .foregroundStyle(.secondary)
+            .help(text)
     }
 
     private var tokens: [String] {
