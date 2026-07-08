@@ -210,6 +210,13 @@ func selftest() {
     assert(try! parseChord("ñ").code == 0x33, "ñ alias mismatch")
     assert(try! parseChord("ç").code == 0x32, "ç alias mismatch")
 
+    // agent script names: same chord vocabulary, Carbon keycodes/modifiers
+    assert(parseHotkeyName("f13")! == (105, 0), "f13 hotkey mismatch")
+    assert(parseHotkeyName("cmd-shift-f20")! == (90, 0x300), // cmdKey|shiftKey
+           "cmd-shift-f20 hotkey mismatch")
+    assert(parseHotkeyName("f12") == nil && parseHotkeyName("f21") == nil
+           && parseHotkeyName("foo-f13") == nil, "invalid hotkey names must be rejected")
+
     print("selftest OK")
 }
 
@@ -231,11 +238,25 @@ func usage() -> Never {
           record chords from your real keyboard (ESC ends); with layer+key,
           bind the result immediately
       ch57x-whisperer gui                  open the SwiftUI configurator
+      ch57x-whisperer agent [--install|--uninstall]
+          menu-bar agent: F13-F20 hotkeys run zsh scripts from
+          ~/.config/ch57x-whisperer/actions/ (f13.sh, cmd-f14.sh, ...);
+          --install adds a login LaunchAgent, --uninstall removes it
     """)
     exit(2)
 }
 
 // MARK: - main
+
+// LED memory lived in the process-name defaults domain before the app gained
+// a CFBundleIdentifier; copy it into the new domain once.
+if let old = UserDefaults(suiteName: "ch57x-whisperer") {
+    for layer in 1...3 where UserDefaults.standard.string(forKey: "led.layer\(layer)") == nil {
+        if let value = old.string(forKey: "led.layer\(layer)") {
+            UserDefaults.standard.set(value, forKey: "led.layer\(layer)")
+        }
+    }
+}
 
 var args = Array(CommandLine.arguments.dropFirst())
 do {
@@ -245,6 +266,7 @@ do {
     case "probe": probe()
     case "selftest": selftest()
     case "gui": runGUI()
+    case "agent": try runAgent(args: Array(args.dropFirst()))
     case "read":
         try readConfig(layer: args.count > 1 ? parseLayer(args[1]) : nil)
     case "record":

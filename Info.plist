@@ -3,9 +3,12 @@
 <plist version="1.0">
 <dict>
 	<!-- Embedded into the binary (__TEXT,__info_plist) so the unbundled
-	     executable shows a proper name in the menu bar. No CFBundleIdentifier
-	     on purpose: adding one would change the UserDefaults domain and orphan
-	     the stored LED memory. -->
+	     executable shows a proper name in the menu bar. The bundle identifier
+	     moves the UserDefaults domain away from the old process-name one;
+	     main.swift migrates the LED memory once. It also lets the LaunchAgent's
+	     AssociatedBundleIdentifiers show the app icon in Login Items. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.palanx.ch57x-whisperer</string>
 	<key>CFBundleName</key>
 	<string>CH57x Whisperer</string>
 	<key>CFBundleDisplayName</key>

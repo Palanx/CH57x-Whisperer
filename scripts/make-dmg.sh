@@ -22,13 +22,16 @@ rm -rf "$ICONSET"
 
 cp "$BIN" "dist/$APP.app/Contents/MacOS/ch57x-whisperer"
 
-# No CFBundleIdentifier on purpose: it would move the UserDefaults domain
-# and orphan the LED memory (see repo Info.plist).
+# Same CFBundleIdentifier as the embedded Info.plist so the CLI binary and the
+# app share one UserDefaults domain, and Login Items can show the app icon for
+# the agent LaunchAgent (AssociatedBundleIdentifiers).
 cat > "dist/$APP.app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.palanx.ch57x-whisperer</string>
 	<key>CFBundleName</key>
 	<string>CH57x Whisperer</string>
 	<key>CFBundleDisplayName</key>
@@ -41,6 +44,34 @@ cat > "dist/$APP.app/Contents/Info.plist" <<'EOF'
 	<string>APPL</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+</dict>
+</plist>
+EOF
+
+# Agent LaunchAgent lives INSIDE the bundle: `agent --install` registers it
+# with SMAppService, so Login Items shows it under the app's name and icon
+# (a plist in ~/Library/LaunchAgents shows a generic exec icon instead).
+mkdir -p "dist/$APP.app/Contents/Library/LaunchAgents"
+cat > "dist/$APP.app/Contents/Library/LaunchAgents/com.palanx.ch57x-whisperer.agent.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.palanx.ch57x-whisperer.agent</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/ch57x-whisperer</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>ch57x-whisperer</string>
+		<string>agent</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/ch57x-agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ch57x-agent.log</string>
 </dict>
 </plist>
 EOF

@@ -21,6 +21,8 @@ and a SwiftUI GUI for humans. No drivers, no hidapi, no third-party dependencies
 - **Record macros** by typing them on your real keyboard
 - **GUI** — key grid, layer tabs, chord composer with searchable key picker (F13–F24
   included), all of the above without memorizing syntax
+- **Action agent** — a menu-bar agent that turns F13–F20 into context-aware actions:
+  each key runs a zsh script of yours, which can branch on the focused app
 
 Bindings are written to the keyboard's own memory, so they persist and work on any
 machine — you only need this tool to change them.
@@ -100,6 +102,78 @@ ch57x-whisperer record 1 7
 
 Run `ch57x-whisperer` with no arguments (or any wrong ones) for the full syntax,
 including every media/mouse token and LED mode.
+
+### Action agent
+
+Bind pad keys to F13–F20 (keys no physical keyboard has), then let the host react.
+The agent is a **standalone background process** — the configurator app does not need
+to be open (or even the keyboard connected). Its only footprint is a small mouth icon
+in the menu bar.
+
+Set it up once, from the app in /Applications:
+
+```sh
+"/Applications/CH57x Whisperer.app/Contents/MacOS/ch57x-whisperer" agent --install
+```
+
+From then on it runs by itself at every login — no app, no terminal (see
+[How the install works](#how-the-install-works) below).
+
+The agent watches `~/.config/ch57x-whisperer/actions/`: a script named `f13.sh` runs
+when F13 is pressed, `cmd-f14.sh` on ⌘F14, and so on
+(`[ctrl-][shift-][alt-][cmd-]f13…f20.sh`). Before each run the agent sets `FRONT_APP`
+(bundle id of the focused app) and `FRONT_APP_NAME`, so one key can do different things
+in different apps:
+
+```sh
+# ~/.config/ch57x-whisperer/actions/f13.sh
+open -a "Rider"                       # focus-or-launch — open -a does both
+
+case "$FRONT_APP" in
+  com.jetbrains.rider) cd ~/Work/game && dotnet build ;;
+  com.unity3d.*)       echo "already in Unity" ;;
+esac
+```
+
+Edit scripts freely; pick **Reload Scripts** from the mouth icon's menu to apply. The
+menu also lists every active binding — clicking one runs its script, handy for testing
+without touching the pad — and **Quit Agent** stops the process.
+
+#### How the install works
+
+Run from the app, `agent --install` registers a LaunchAgent that ships **inside the
+app bundle** (via `SMAppService`), which starts the agent immediately and at every
+login:
+
+```sh
+"/Applications/CH57x Whisperer.app/Contents/MacOS/ch57x-whisperer" agent --install
+```
+
+- System Settings → **Login Items & Extensions → App Background Activity** shows it as
+  **CH57x Whisperer** with the app's icon, and its toggle enables/disables it.
+- **App updates cost nothing**: the login item is part of the app, so dragging a new
+  version into /Applications carries it along — no reinstall needed.
+- If you built from source and run `--install` from a bare binary (PATH copy or
+  `.build/...`), it falls back to a classic plist in `~/Library/LaunchAgents/`
+  pointing at that exact binary — works the same, but Settings shows a generic
+  exec icon, and the binary must stay where it was. Prefer the app.
+
+The agent logs to `/tmp/ch57x-agent.log`. `agent --uninstall` removes the login item
+(either kind); `agent` with no flags runs it only for the current session
+(Quit Agent in the menu, or Ctrl-C, stops it).
+
+Quit the agent and want it back without logging out? The login item stays registered:
+
+```sh
+launchctl start com.palanx.ch57x-whisperer.agent   # app install
+launchctl start ch57x-whisperer.agent              # source-binary install
+```
+
+**Safe for managed/corporate Macs:** the agent uses `RegisterEventHotKey`, the same
+permission-free API as Alfred/Raycast. It requires **no** Input Monitoring, no
+Accessibility, no prompt of any kind — macOS only delivers the registered F-keys, so the
+process cannot observe your typing. No network, no hidden persistence (`--install`
+writes a plain user LaunchAgent you can read), and every action is a script you wrote.
 
 ### macOS permissions
 
