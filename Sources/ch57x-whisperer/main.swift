@@ -216,21 +216,21 @@ func selftest() {
 func usage() -> Never {
     print("""
     usage:
-      minikbd probe
-      minikbd selftest
-      minikbd bind <layer 1-3> <key> <chord>... [--delay <ms>]
+      ch57x-whisperer probe
+      ch57x-whisperer selftest
+      ch57x-whisperer bind <layer 1-3> <key> <chord>... [--delay <ms>]
           key:   1-12 | knob1-ccw|press|cw | knob2-ccw|press|cw
           chord: a | ctrl-shift-t | cmd-f13 | ... (up to \(Ch57x.maxAccordsPerKey) chords)
           or ONE media/mouse action instead of chords:
             media: \(mediaCodes.keys.sorted().joined(separator: " "))
             mouse: [mods-]click | rclick | mclick | wheelup | wheeldown (e.g. ctrl-wheelup)
-      minikbd led <layer 1-3> off|backlight-<color>|shock-<color>|shock2-<color>|press-<color>
+      ch57x-whisperer led <layer 1-3> off|backlight-<color>|shock-<color>|shock2-<color>|press-<color>
           colors: white red orange yellow green cyan blue purple
-      minikbd read [layer 1-3]     print bindings stored in the keyboard
-      minikbd record [<layer 1-3> <key>]
+      ch57x-whisperer read [layer 1-3]     print bindings stored in the keyboard
+      ch57x-whisperer record [<layer 1-3> <key>]
           record chords from your real keyboard (ESC ends); with layer+key,
           bind the result immediately
-      minikbd gui                  open the SwiftUI configurator
+      ch57x-whisperer gui                  open the SwiftUI configurator
     """)
     exit(2)
 }
@@ -258,7 +258,7 @@ do {
             try keyboard.send(Ch57x.bindKey(keyID: keyID, layer: layer, accords: accords))
             print("bound \(args[1]) on layer \(layer)")
         } else {
-            print("bind it with: minikbd bind <layer> <key> \(chords.joined(separator: " "))")
+            print("bind it with: ch57x-whisperer bind <layer> <key> \(chords.joined(separator: " "))")
         }
     case "bind":
         args.removeFirst()
@@ -284,6 +284,10 @@ do {
         let (mode, color) = try parseLED(args[2])
         let keyboard = try KeyboardDevice.open()
         try keyboard.send(Ch57x.setLED(layer: layer, mode: mode, color: color))
+        // Keep the GUI's per-layer LED memory in sync (same binary, same defaults).
+        let parts = args[2].split(separator: "-", maxSplits: 1)
+        UserDefaults.standard.set("\(parts[0]) \(parts.count > 1 ? parts[1] : "cyan")",
+                                  forKey: "led.layer\(layer)")
         print("led on layer \(layer) set to \(args[2])")
     default: usage()
     }

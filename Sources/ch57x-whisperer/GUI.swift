@@ -249,8 +249,13 @@ struct ContentView: View {
                     Pick a mode and a color, then **Set**. \
                     The dot previews your choice.
 
-                    The keyboard can't report its LED state, so this \
-                    shows the last value set from here — *off* if unknown.
+                    **Limitation:** the keyboard can't report its LED \
+                    state, so this display is a memory, not a readout — \
+                    it shows the last value set from this app (GUI or \
+                    `ch57x-whisperer led`), per layer. If the LEDs were changed \
+                    any other way, or never set from here, it shows *off* \
+                    while the real LEDs may glow. Press **Set** to bring \
+                    both back in sync.
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
@@ -331,15 +336,20 @@ struct ContentView: View {
     }
 
     private func slot(_ id: UInt8, title: String) -> some View {
-        var bound = bindings[layer]?[id] ?? ""
-        if let d = delays[layer]?[id], d > 0, !bound.isEmpty {
-            bound += " ⏱\(d)"
-        }
+        let bound = bindings[layer]?[id] ?? ""
+        let delay = delays[layer]?[id] ?? 0
         return Button {
             select(id)
         } label: {
             VStack(spacing: 2) {
-                Text(title).bold()
+                HStack(spacing: 3) {
+                    Text(title).bold()
+                    if delay > 0, !bound.isEmpty {
+                        Text("⏱\(delay)")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
                 Text(bound.isEmpty ? "—" : bound)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -473,14 +483,124 @@ private struct InfoButton: View {
     }
 }
 
+// MARK: - App icon
+// No bundle, no assets: the Dock icon is drawn in code — the macropad face
+// with whisper waves drifting down onto it, one key lit because it listened.
+
+func appIcon(size: CGFloat = 512) -> NSImage {
+    NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+        let s = size / 512 // design in 512-point space
+        func rr(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat,
+                _ r: CGFloat) -> NSBezierPath {
+            NSBezierPath(roundedRect: NSRect(x: x * s, y: y * s, width: w * s, height: h * s),
+                         xRadius: r * s, yRadius: r * s)
+        }
+        func gray(_ white: CGFloat) -> NSColor { NSColor(calibratedWhite: white, alpha: 1) }
+
+        // squircle body = the keyboard itself
+        let body = rr(32, 32, 448, 448, 104)
+        NSGradient(starting: NSColor(calibratedRed: 0.17, green: 0.17, blue: 0.22, alpha: 1),
+                   ending: NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1))!
+            .draw(in: body, angle: -90)
+
+        // everything below stays inside the squircle
+        body.addClip()
+
+        func pt(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s, y: y * s) }
+
+        // the whisperer: parted lips, emoji-flat so they survive Dock sizes,
+        // drawn FIRST so the lower lip slips behind the keyboard.
+        // mpt remaps the shape (tuned around (394, 245)) to its place and scale.
+        func mpt(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+            pt(256 + (x - 394) * 1.25, 358 + (y - 245) * 1.25)
+        }
+        let lipDark = NSColor(calibratedRed: 0.78, green: 0.12, blue: 0.32, alpha: 1)
+        let lipLight = NSColor(calibratedRed: 0.93, green: 0.25, blue: 0.42, alpha: 1)
+
+        let lower = NSBezierPath() // its bottom hides behind the pad
+        lower.move(to: mpt(322, 256))
+        lower.curve(to: mpt(394, 240), controlPoint1: mpt(338, 247), controlPoint2: mpt(368, 241))
+        lower.curve(to: mpt(466, 256), controlPoint1: mpt(420, 241), controlPoint2: mpt(450, 247))
+        lower.curve(to: mpt(394, 178), controlPoint1: mpt(446, 202), controlPoint2: mpt(424, 178))
+        lower.curve(to: mpt(322, 256), controlPoint1: mpt(364, 178), controlPoint2: mpt(342, 202))
+        lower.close()
+        lipLight.setFill()
+        lower.fill()
+
+        let upper = NSBezierPath() // cupid's bow on top
+        upper.move(to: mpt(322, 256))
+        upper.curve(to: mpt(372, 296), controlPoint1: mpt(334, 278), controlPoint2: mpt(356, 296))
+        upper.curve(to: mpt(394, 289), controlPoint1: mpt(382, 296), controlPoint2: mpt(387, 289))
+        upper.curve(to: mpt(416, 296), controlPoint1: mpt(401, 289), controlPoint2: mpt(406, 296))
+        upper.curve(to: mpt(466, 256), controlPoint1: mpt(432, 296), controlPoint2: mpt(454, 278))
+        upper.curve(to: mpt(322, 256), controlPoint1: mpt(428, 261), controlPoint2: mpt(360, 261))
+        upper.close()
+        lipDark.setFill()
+        upper.fill()
+
+        // the device, landscape, centered, over the lower lip:
+        // 4x3 keys + knob column at right
+        let pad = rr(66, 88, 380, 240, 26)
+        gray(0.17).setFill()
+        pad.fill()
+        pad.lineWidth = 5 * s
+        gray(0.32).setStroke()
+        pad.stroke()
+
+        let lit = NSColor.cyan
+        for row in 0..<3 {
+            for col in 0..<4 {
+                let key = rr(81 + CGFloat(col) * 74, 103 + CGFloat(row) * 74, 62, 62, 13)
+                if row == 2, col == 0 { // top-left key heard the whisper
+                    NSGraphicsContext.current?.cgContext.setShadow(
+                        offset: .zero, blur: 18 * s, color: lit.cgColor)
+                    lit.withAlphaComponent(0.9).setFill()
+                    key.fill()
+                    NSGraphicsContext.current?.cgContext.setShadow(offset: .zero, blur: 0)
+                } else {
+                    gray(0.26).setFill()
+                    key.fill()
+                }
+            }
+        }
+
+        for cy: CGFloat in [260, 156] {
+            let knob = NSBezierPath(ovalIn: NSRect(x: 378 * s, y: (cy - 24) * s,
+                                                   width: 48 * s, height: 48 * s))
+            gray(0.30).setFill()
+            knob.fill()
+            knob.lineWidth = 4 * s
+            gray(0.46).setStroke()
+            knob.stroke()
+            let mark = NSBezierPath()
+            mark.move(to: pt(402, cy))
+            mark.line(to: pt(414, cy + 12))
+            mark.lineWidth = 6 * s
+            mark.lineCapStyle = .round
+            gray(0.78).setStroke()
+            mark.stroke()
+        }
+        return true
+    }
+}
+
 func runGUI() {
+    // ICON_PNG=<path>: write the icon and exit (used to render docs/icon.png)
+    if let out = ProcessInfo.processInfo.environment["ICON_PNG"] {
+        let rep = NSBitmapImageRep(data: appIcon(size: 1024).tiffRepresentation!)!
+        try! rep.representation(using: .png, properties: [:])!
+            .write(to: URL(fileURLWithPath: out))
+        print("icon written to \(out)")
+        exit(0)
+    }
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
+    app.applicationIconImage = appIcon()
     let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 540, height: 640),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
         backing: .buffered, defer: false)
-    window.title = "minikbd"
+    window.title = "CH57x Whisperer"
     window.isReleasedWhenClosed = false
     window.contentView = NSHostingView(rootView: ContentView())
     window.center()
