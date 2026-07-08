@@ -622,6 +622,54 @@ func runGUI() {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
     app.applicationIconImage = appIcon()
+
+    // minimal main menu: Quit + Help ▸ update status ("Up to Date (v…)" when
+    // current, "Restart to Update (v…)" when a GitHub release is newer)
+    let mainMenu = NSMenu()
+    let appMenuItem = NSMenuItem()
+    mainMenu.addItem(appMenuItem)
+    let appMenu = NSMenu()
+    appMenu.addItem(withTitle: "Quit CH57x Whisperer",
+                    action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    appMenuItem.submenu = appMenu
+    let helpMenuItem = NSMenuItem()
+    mainMenu.addItem(helpMenuItem)
+    let helpMenu = NSMenu(title: "Help")
+    let updateItem = helpMenu.addItem(withTitle: "Checking for Updates…",
+                                      action: nil, keyEquivalent: "")
+    helpMenuItem.submenu = helpMenu
+    app.mainMenu = mainMenu
+
+    // automatic updates only for .app installs — source builds shouldn't
+    // race their embedded version against GitHub releases
+    if Bundle.main.bundlePath.hasSuffix(".app") {
+        let updater = Updater.shared
+        updater.host = .gui
+        updater.onChange = {
+            switch updater.state {
+            case .checking:
+                updateItem.title = "Checking for Updates…"
+                updateItem.action = nil
+            case .upToDate:
+                updateItem.title = "Up to Date (v\(appVersion))"
+                updateItem.action = nil
+            case .checkFailed: // clickable retry
+                updateItem.title = "Check for Updates"
+                updateItem.target = updater
+                updateItem.action = #selector(Updater.check)
+            case .available, .failed:
+                updateItem.title = "Restart to Update (\(updater.newVersion))"
+                updateItem.target = updater
+                updateItem.action = #selector(Updater.restartToUpdate)
+            case .downloading, .installing:
+                updateItem.title = "Updating…"
+                updateItem.action = nil
+            }
+        }
+        updater.startChecking()
+    } else {
+        updateItem.title = "Updates: app installs only"
+    }
     let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 540, height: 640),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],

@@ -63,6 +63,24 @@ cp .build/release/ch57x-whisperer /usr/local/bin/
 
 To build the .app + DMG yourself: `scripts/make-dmg.sh` (output lands in `dist/`).
 
+### Updates
+
+The app updates itself from [GitHub releases](https://github.com/Palanx/CH57x-Whisperer/releases)
+— it checks on launch and every 6 hours:
+
+- **GUI**: Help ▸ shows **Up to Date (v…)** — or **Restart to Update (v…)** when a new
+  release exists; pick it to update.
+- **Agent**: the menu bar mouth gains a small down-arrow badge and its menu a
+  **Restart to Update** item.
+- **CLI**: `ch57x-whisperer update` does the same from a terminal.
+
+Updating downloads the release DMG (a floating window shows the progress; errors are
+shown there too), replaces the app in /Applications, and restarts whatever was running
+before — GUI, agent, or both. Nothing that wasn't running gets started.
+
+Automatic checking only happens in the installed app; source builds never check
+(the explicit `update` command still works from anywhere).
+
 ## Usage
 
 **Connect the keyboard by USB cable or dongle.** Programming does not work over
@@ -141,32 +159,28 @@ without touching the pad — and **Quit Agent** stops the process.
 
 #### How the install works
 
-Run from the app, `agent --install` registers a LaunchAgent that ships **inside the
-app bundle** (via `SMAppService`), which starts the agent immediately and at every
-login:
+`agent --install` writes a plain user LaunchAgent —
+`~/Library/LaunchAgents/ch57x-whisperer.agent.plist` — pointing at the **absolute path
+of the binary you ran it from**, and loads it: the agent starts immediately and at
+every login. Run it from the app in /Applications so the path survives updates —
+replacing the app in place (which is what updates do) changes nothing for the login
+item. A PATH copy (`/usr/local/bin`) works too as long as it stays put; never install
+from a build directory.
+
+In System Settings → Login Items & Extensions the item appears with a generic
+executable icon. That's a deliberate trade-off: the API that shows the app's own icon
+there (`SMAppService`) pins the app's code signature, and without a paid Apple
+Developer ID this app is ad-hoc signed — every update would look like tampering to
+macOS and the agent would stop launching. The plain plist is immune.
+
+The agent logs to `/tmp/ch57x-agent.log`. `agent --uninstall` removes the login item;
+`agent` with no flags runs it only for the current session (Quit Agent in the menu, or
+Ctrl-C, stops it).
+
+Quit the agent and want it back without logging out? The login item stays loaded:
 
 ```sh
-"/Applications/CH57x Whisperer.app/Contents/MacOS/ch57x-whisperer" agent --install
-```
-
-- System Settings → **Login Items & Extensions → App Background Activity** shows it as
-  **CH57x Whisperer** with the app's icon, and its toggle enables/disables it.
-- **App updates cost nothing**: the login item is part of the app, so dragging a new
-  version into /Applications carries it along — no reinstall needed.
-- If you built from source and run `--install` from a bare binary (PATH copy or
-  `.build/...`), it falls back to a classic plist in `~/Library/LaunchAgents/`
-  pointing at that exact binary — works the same, but Settings shows a generic
-  exec icon, and the binary must stay where it was. Prefer the app.
-
-The agent logs to `/tmp/ch57x-agent.log`. `agent --uninstall` removes the login item
-(either kind); `agent` with no flags runs it only for the current session
-(Quit Agent in the menu, or Ctrl-C, stops it).
-
-Quit the agent and want it back without logging out? The login item stays registered:
-
-```sh
-launchctl start com.palanx.ch57x-whisperer.agent   # app install
-launchctl start ch57x-whisperer.agent              # source-binary install
+launchctl start ch57x-whisperer.agent
 ```
 
 **Safe for managed/corporate Macs:** the agent uses `RegisterEventHotKey`, the same

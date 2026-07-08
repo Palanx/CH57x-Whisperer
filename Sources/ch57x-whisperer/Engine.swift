@@ -38,8 +38,9 @@ func parseHotkeyName(_ name: String) -> (code: UInt32, mods: UInt32)? {
 }
 
 // Menu bar icon: just the whispering lips from appIcon(), as a template image
-// so it adapts to light/dark menu bars.
-func mouthIcon() -> NSImage {
+// so it adapts to light/dark menu bars. `update: true` adds a down-arrow
+// badge (top-right, Ollama-style) meaning "update available".
+func mouthIcon(update: Bool = false) -> NSImage {
     let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
         // lip curves live in appIcon's "mouth space" (x 322-466, y 178-296);
         // map that box into the 18pt square, vertically centered. The lower
@@ -66,6 +67,25 @@ func mouthIcon() -> NSImage {
         NSColor.black.setFill()
         lower.fill()
         upper.fill()
+
+        if update {
+            let ctx = NSGraphicsContext.current
+            // gap ring so the badge separates from the lips, then the badge,
+            // then the arrow knocked out of it
+            ctx?.compositingOperation = .destinationOut
+            NSBezierPath(ovalIn: NSRect(x: 9, y: 9, width: 10, height: 10)).fill()
+            ctx?.compositingOperation = .sourceOver
+            NSBezierPath(ovalIn: NSRect(x: 10, y: 10, width: 8, height: 8)).fill()
+            ctx?.compositingOperation = .destinationOut
+            NSBezierPath(rect: NSRect(x: 13.4, y: 13.2, width: 1.2, height: 2.6)).fill()
+            let arrow = NSBezierPath()
+            arrow.move(to: NSPoint(x: 14, y: 11.4))
+            arrow.line(to: NSPoint(x: 12.2, y: 13.4))
+            arrow.line(to: NSPoint(x: 15.8, y: 13.4))
+            arrow.close()
+            arrow.fill()
+            ctx?.compositingOperation = .sourceOver
+        }
         return true
     }
     image.isTemplate = true // menu bar tints it for light/dark
@@ -98,7 +118,23 @@ private final class HotkeyAgent: NSObject {
             return noErr
         }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), nil)
 
+        // automatic updates only for .app installs (same rule as the GUI)
+        if Bundle.main.bundlePath.hasSuffix(".app") {
+            Updater.shared.host = .agent
+            Updater.shared.onChange = { [weak self] in self?.refreshUpdateUI() }
+            Updater.shared.startChecking()
+        }
         reload()
+    }
+
+    func refreshUpdateUI() {
+        let badge: Bool
+        switch Updater.shared.state {
+        case .available, .downloading, .installing, .failed: badge = true
+        default: badge = false
+        }
+        statusItem.button?.image = mouthIcon(update: badge)
+        rebuildMenu()
     }
 
     @objc func reload() {
@@ -152,6 +188,18 @@ private final class HotkeyAgent: NSObject {
 
     func rebuildMenu() {
         let menu = NSMenu()
+        switch Updater.shared.state {
+        case .available, .failed:
+            let item = menu.addItem(withTitle: "Restart to Update (\(Updater.shared.newVersion))",
+                                    action: #selector(Updater.restartToUpdate), keyEquivalent: "")
+            item.target = Updater.shared
+            menu.addItem(.separator())
+        case .downloading, .installing:
+            menu.addItem(withTitle: "Updating…", action: nil, keyEquivalent: "")
+            menu.addItem(.separator())
+        default:
+            break // up to date / still checking: no update row, badge-free mouth
+        }
         if bindings.isEmpty {
             menu.addItem(withTitle: "No scripts in ~/.config/ch57x-whisperer/actions",
                          action: nil, keyEquivalent: "")
@@ -195,12 +243,12 @@ private final class HotkeyAgent: NSObject {
 
 // MARK: - launchd install
 
-// From the .app: SMAppService with the plist bundled by make-dmg.sh, so Login
-// Items shows the item under the app's own name and icon. From a bare binary
-// (swift run / PATH copy): legacy ~/Library/LaunchAgents plist — Login Items
-// shows a generic exec there, ad-hoc signing can't do better outside a bundle.
-private let bundledAgentPlist = "com.palanx.ch57x-whisperer.agent.plist"
-
+// Plain ~/Library/LaunchAgents plist, on purpose. SMAppService would show the
+// app's icon in Login Items, but it pins the app's code signature — with our
+// ad-hoc signing every update looks like tampering and launchd kills the
+// agent with EX_CONFIG, and BTM never refreshes the pin (verified 2026-07-08,
+// same wall as Apple forums #795022). A path-based plist survives every
+// update. The pretty Settings icon needs a Developer ID; revisit then.
 private let launchAgentLabel = "ch57x-whisperer.agent"
 private let launchAgentPlist = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/LaunchAgents/\(launchAgentLabel).plist")
@@ -222,17 +270,8 @@ private func removeLegacyLaunchAgent() {
 }
 
 private func installLaunchAgent() throws {
-    if Bundle.main.bundlePath.hasSuffix(".app") {
-        removeLegacyLaunchAgent() // don't leave two agents installed
-        let service = SMAppService.agent(plistName: bundledAgentPlist)
-        try? service.unregister() // re-register cleanly over a previous install
-        try service.register()
-        print("""
-        registered login item (shown as "CH57x Whisperer" in System Settings)
-        log: /tmp/ch57x-agent.log
-        """)
-        return
-    }
+    // clean up any SMAppService registration from earlier experiments
+    try? SMAppService.agent(plistName: "com.palanx.ch57x-whisperer.agent.plist").unregister()
     let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
     let plist: [String: Any] = [
         "Label": launchAgentLabel,
@@ -252,10 +291,7 @@ private func installLaunchAgent() throws {
 }
 
 private func uninstallLaunchAgent() {
-    if Bundle.main.bundlePath.hasSuffix(".app") {
-        try? SMAppService.agent(plistName: bundledAgentPlist).unregister()
-        print("unregistered login item")
-    }
+    try? SMAppService.agent(plistName: "com.palanx.ch57x-whisperer.agent.plist").unregister()
     removeLegacyLaunchAgent()
 }
 

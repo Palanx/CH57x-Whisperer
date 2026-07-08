@@ -217,6 +217,14 @@ func selftest() {
     assert(parseHotkeyName("f12") == nil && parseHotkeyName("f21") == nil
            && parseHotkeyName("foo-f13") == nil, "invalid hotkey names must be rejected")
 
+    // update version comparison
+    assert(isNewerVersion("v1.2.0", than: "1.1.9"), "1.2.0 > 1.1.9")
+    assert(!isNewerVersion("v1.0.0", than: "1.1.0"), "1.0.0 < 1.1.0")
+    assert(!isNewerVersion("1.1.0", than: "1.1.0"), "equal is not newer")
+    assert(isNewerVersion("1.1.0.1", than: "1.1"), "longer tail wins")
+    assert(isNewerVersion("2.0", than: "1.9.9"), "major bump wins")
+    assert(appVersion != "0", "CFBundleShortVersionString missing from Info.plist")
+
     print("selftest OK")
 }
 
@@ -242,6 +250,7 @@ func usage() -> Never {
           menu-bar agent: F13-F20 hotkeys run zsh scripts from
           ~/.config/ch57x-whisperer/actions/ (f13.sh, cmd-f14.sh, ...);
           --install adds a login LaunchAgent, --uninstall removes it
+      ch57x-whisperer update               update to the latest GitHub release
     """)
     exit(2)
 }
@@ -267,6 +276,7 @@ do {
     case "selftest": selftest()
     case "gui": runGUI()
     case "agent": try runAgent(args: Array(args.dropFirst()))
+    case "update": runUpdate()
     case "read":
         try readConfig(layer: args.count > 1 ? parseLayer(args[1]) : nil)
     case "record":

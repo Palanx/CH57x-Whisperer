@@ -5,14 +5,20 @@
 	<!-- Embedded into the binary (__TEXT,__info_plist) so the unbundled
 	     executable shows a proper name in the menu bar. The bundle identifier
 	     moves the UserDefaults domain away from the old process-name one;
-	     main.swift migrates the LED memory once. It also lets the LaunchAgent's
-	     AssociatedBundleIdentifiers show the app icon in Login Items. -->
+	     main.swift migrates the LED memory once. -->
 	<key>CFBundleIdentifier</key>
 	<string>com.palanx.ch57x-whisperer</string>
 	<key>CFBundleName</key>
 	<string>CH57x Whisperer</string>
 	<key>CFBundleDisplayName</key>
 	<string>CH57x Whisperer</string>
+	<!-- single source of truth for the app version: make-dmg.sh copies it
+	     into the bundle plist, the updater compares it to GitHub tags.
+	     NOTE: swift build does not track this file — force a relink
+	     (rm .build/*/debug/ch57x-whisperer) after changing it.
+	     Editing via PlistBuddy strips these comments; edit by hand. -->
+	<key>CFBundleShortVersionString</key>
+	<string>1.2.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>
