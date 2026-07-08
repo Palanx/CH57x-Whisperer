@@ -667,7 +667,12 @@ func runGUI() {
             }
         }
         updater.startChecking()
-        helpMenu.delegate = updater // re-check on menu open
+        // AppKit owns the delegate of menus titled "Help" (search field), so
+        // NSMenuDelegate never fires there — watch menu-bar tracking instead
+        NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+                                               object: mainMenu, queue: nil) { _ in
+            updater.menuWillOpen(helpMenu)
+        }
     } else {
         updateItem.title = "Updates: app installs only"
     }

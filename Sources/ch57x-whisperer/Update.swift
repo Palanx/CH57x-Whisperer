@@ -52,6 +52,14 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    /// Runs a block on the main thread in .common run-loop modes: the GCD main
+    /// queue is paused while a menu is open (menu tracking), and menu-triggered
+    /// checks must update the very menu the user is looking at.
+    private func onMain(_ block: @escaping () -> Void) {
+        RunLoop.main.perform(inModes: [.common], block: block)
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
     /// NSMenuDelegate: re-check when the user opens the Help / status menu, so
     /// a release published after the last 6-hourly check shows up immediately.
     func menuWillOpen(_ menu: NSMenu) {
@@ -69,13 +77,13 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = json["tag_name"] as? String else {
-                DispatchQueue.main.async { self.state = .checkFailed }
+                self.onMain { self.state = .checkFailed }
                 return
             }
             let assets = (json["assets"] as? [[String: Any]]) ?? []
             let dmg = assets.compactMap { $0["browser_download_url"] as? String }
                 .first { $0.hasSuffix(".dmg") }
-            DispatchQueue.main.async {
+            self.onMain {
                 if isNewerVersion(tag, than: appVersion), let dmg, let url = URL(string: dmg) {
                     self.newVersion = tag
                     self.dmgURL = url
@@ -93,7 +101,7 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
         state = .downloading(0)
         let task = URLSession.shared.downloadTask(with: dmgURL) { location, _, error in
             guard let location else {
-                DispatchQueue.main.async {
+                self.onMain {
                     self.state = .failed("download failed: \(error?.localizedDescription ?? "unknown error")")
                 }
                 return
@@ -103,19 +111,19 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
             do {
                 try FileManager.default.moveItem(at: location, to: dmg)
             } catch {
-                DispatchQueue.main.async { self.state = .failed(error.localizedDescription) }
+                self.onMain { self.state = .failed(error.localizedDescription) }
                 return
             }
-            DispatchQueue.main.async { self.state = .installing }
+            self.onMain { self.state = .installing }
             do {
                 try self.replaceApp(dmg: dmg) // still on the URLSession queue
-                DispatchQueue.main.async { NSApp.terminate(nil) } // relauncher takes over
+                self.onMain { NSApp.terminate(nil) } // relauncher takes over
             } catch {
-                DispatchQueue.main.async { self.state = .failed("\(error)") }
+                self.onMain { self.state = .failed("\(error)") }
             }
         }
         progressObservation = task.progress.observe(\.fractionCompleted) { progress, _ in
-            DispatchQueue.main.async {
+            self.onMain {
                 if case .downloading = self.state { self.state = .downloading(progress.fractionCompleted) }
             }
         }
