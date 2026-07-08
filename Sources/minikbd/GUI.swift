@@ -39,6 +39,8 @@ let keyGroups: [(String, [String])] = [
 struct ContentView: View {
     @State private var layer: UInt8 = 1
     @State private var bindings: [UInt8: [UInt8: String]] = [:] // layer -> keyID -> chords
+    @State private var delays: [UInt8: [UInt8: Int]] = [:] // layer -> keyID -> ms between steps
+    @State private var delayMS = 0
     @State private var selected: UInt8 = 1
     @State private var chordText = ""
     @State private var status = "click Read to load current bindings"
@@ -139,6 +141,34 @@ struct ContentView: View {
                 }
             }
             .frame(height: 20) // reserved so the window doesn't jump when chips appear
+
+            HStack {
+                HStack(spacing: 4) {
+                    Label("delay", systemImage: "timer")
+                    info("""
+                    **Delay between steps** — a property of the selected key, \
+                    not a step in the sequence.
+
+                    The keyboard pauses this many milliseconds between *every* \
+                    keystroke of this key's macro. One value per key, \
+                    0–\(Ch57x.maxDelayMS) ms; 0 means full speed.
+
+                    It is stored in the keyboard together with the binding \
+                    when you press **Write**.
+                    """)
+                }
+                .frame(width: 110, alignment: .leading)
+                TextField("0", value: $delayMS, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 70)
+                    .onChange(of: delayMS) { v in
+                        delayMS = min(max(0, v), Ch57x.maxDelayMS)
+                    }
+                Stepper("", value: $delayMS, in: 0...Ch57x.maxDelayMS, step: 50)
+                    .labelsHidden()
+                Text("ms between steps").foregroundStyle(.secondary)
+                Spacer()
+            }
 
             HStack {
                 HStack(spacing: 4) {
@@ -301,7 +331,10 @@ struct ContentView: View {
     }
 
     private func slot(_ id: UInt8, title: String) -> some View {
-        let bound = bindings[layer]?[id] ?? ""
+        var bound = bindings[layer]?[id] ?? ""
+        if let d = delays[layer]?[id], d > 0, !bound.isEmpty {
+            bound += " ⏱\(d)"
+        }
         return Button {
             select(id)
         } label: {
@@ -322,14 +355,17 @@ struct ContentView: View {
     private func select(_ id: UInt8) {
         selected = id
         chordText = bindings[layer]?[id] ?? ""
+        delayMS = delays[layer]?[id] ?? 0
     }
 
     private func read() {
         do {
             let (_, _, mappings) = try fetchMappings(layers: [1, 2, 3])
             bindings = [:]
+            delays = [:]
             for m in mappings {
                 bindings[m.layer, default: [:]][m.keyNumber] = m.text
+                delays[m.layer, default: [:]][m.keyNumber] = m.delayMS
             }
             select(selected)
             status = "read \(mappings.count) bindings"
@@ -375,8 +411,10 @@ struct ContentView: View {
         do {
             let chords = chordText.split(separator: " ").map(String.init)
             guard !chords.isEmpty else { throw MiniKeyboardError("type chords first") }
-            try KeyboardDevice.open().send(bindMessages(keyID: selected, layer: layer, tokens: chords))
+            try KeyboardDevice.open().send(bindMessages(keyID: selected, layer: layer,
+                                                        tokens: chords, delayMS: delayMS))
             bindings[layer, default: [:]][selected] = chords.joined(separator: " ")
+            delays[layer, default: [:]][selected] = delayMS
             status = "bound \(keyLabel(selected)) on layer \(layer)"
         } catch {
             status = "\(error)"
