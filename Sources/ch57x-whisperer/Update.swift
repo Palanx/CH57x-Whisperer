@@ -62,10 +62,12 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
 
     /// NSMenuDelegate: re-check when the user opens the Help / status menu, so
     /// a release published after the last 6-hourly check shows up immediately.
+    /// Pending offers re-check too — a newer release replaces the offered one
+    /// (otherwise the menu keeps offering vN after vN+1 ships).
     func menuWillOpen(_ menu: NSMenu) {
         switch state {
-        case .upToDate, .checkFailed: check()
-        default: break // don't disturb an offer or a running download
+        case .downloading, .installing, .failed: break
+        default: check()
         }
     }
 
