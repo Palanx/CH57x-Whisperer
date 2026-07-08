@@ -240,7 +240,9 @@ func usage() -> Never {
 var args = Array(CommandLine.arguments.dropFirst())
 do {
     switch args.first {
-    case nil, "probe": probe()
+    // No args + running from an .app bundle = double-clicked in Finder.
+    case nil: Bundle.main.bundlePath.hasSuffix(".app") ? runGUI() : probe()
+    case "probe": probe()
     case "selftest": selftest()
     case "gui": runGUI()
     case "read":

@@ -1,0 +1,58 @@
+#!/bin/zsh
+# Build a release .app bundle and a drag-to-Applications DMG in dist/.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+APP="CH57x Whisperer"
+swift build -c release
+BIN=".build/release/ch57x-whisperer"
+
+rm -rf dist && mkdir -p "dist/$APP.app/Contents/MacOS" "dist/$APP.app/Contents/Resources"
+
+# Icon: the binary renders its own icon PNG; iconutil turns it into .icns.
+ICONSET="dist/icon.iconset"
+mkdir "$ICONSET"
+ICON_PNG="$ICONSET/icon_512x512@2x.png" "$BIN" gui
+for s in 16 32 128 256 512; do
+  sips -z $s $s "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s*2)) $((s*2)) "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "dist/$APP.app/Contents/Resources/icon.icns"
+rm -rf "$ICONSET"
+
+cp "$BIN" "dist/$APP.app/Contents/MacOS/ch57x-whisperer"
+
+# No CFBundleIdentifier on purpose: it would move the UserDefaults domain
+# and orphan the LED memory (see repo Info.plist).
+cat > "dist/$APP.app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>CH57x Whisperer</string>
+	<key>CFBundleDisplayName</key>
+	<string>CH57x Whisperer</string>
+	<key>CFBundleExecutable</key>
+	<string>ch57x-whisperer</string>
+	<key>CFBundleIconFile</key>
+	<string>icon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+EOF
+
+# Ad-hoc signature: enough to run on Apple Silicon; downloaders still
+# right-click > Open once (no Developer ID / notarization).
+codesign --force --deep -s - "dist/$APP.app"
+
+STAGE="dist/dmg"
+mkdir "$STAGE"
+cp -R "dist/$APP.app" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "$APP" -srcfolder "$STAGE" -ov -format UDZO "dist/$APP.dmg"
+rm -rf "$STAGE"
+echo "done: dist/$APP.dmg"
