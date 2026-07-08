@@ -25,22 +25,31 @@ and a SwiftUI GUI for humans. No drivers, no hidapi, no third-party dependencies
 Bindings are written to the keyboard's own memory, so they persist and work on any
 machine — you only need this tool to change them.
 
-## Requirements
-
-- macOS 13+ on Apple Silicon (Intel likely works, untested)
-- The Swift toolchain — either Xcode or just the Command Line Tools:
-
-  ```sh
-  xcode-select --install
-  ```
-
-That's the complete dependency list. The package resolves zero external packages.
-
 ## Install
 
+### App (recommended)
+
+Grab the DMG from the [latest release](https://github.com/Palanx/CH57x-Whisperer/releases/latest),
+open it and drag the app to Applications.
+
+**First launch:** right-click the app → **Open** → **Open**. The app is not notarized,
+so macOS blocks a plain double-click once — after that it opens normally.
+
+The app binary is also the CLI:
+
 ```sh
-git clone https://github.com/palanx/ch57x-whisperer.git
-cd ch57x-whisperer
+"/Applications/CH57x Whisperer.app/Contents/MacOS/ch57x-whisperer" probe
+```
+
+### Build from source
+
+Requires macOS 13+ on Apple Silicon (Intel likely works, untested) and the Swift
+toolchain — either Xcode or just the Command Line Tools (`xcode-select --install`).
+The package resolves zero external packages.
+
+```sh
+git clone https://github.com/Palanx/CH57x-Whisperer.git
+cd CH57x-Whisperer
 swift build -c release
 ```
 
@@ -49,6 +58,8 @@ Run it in place with `swift run`, or put the binary on your PATH:
 ```sh
 cp .build/release/ch57x-whisperer /usr/local/bin/
 ```
+
+To build the .app + DMG yourself: `scripts/make-dmg.sh` (output lands in `dist/`).
 
 ## Usage
 
