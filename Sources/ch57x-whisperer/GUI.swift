@@ -36,6 +36,26 @@ let keyGroups: [(String, [String])] = [
     ("Other", ["printscreen", "scrolllock", "pause", "menu"]),
 ]
 
+// Display-only glyphs: chips, tiles and the picker show `.` / `(kp).` instead of
+// dot / kpdot. Bind tokens (field, CLI, read output) are untouched.
+let keyGlyphs: [String: String] = {
+    var g = ["minus": "-", "equal": "=", "lbracket": "[", "rbracket": "]",
+             "backslash": "\\", "semicolon": ";", "quote": "'", "grave": "`",
+             "comma": ",", "dot": ".", "slash": "/",
+             "kpdot": "(kp).", "kpenter": "(kp)enter", "kpplus": "(kp)+",
+             "kpminus": "(kp)-", "kpasterisk": "(kp)*", "kpslash": "(kp)/",
+             "kpequal": "(kp)="]
+    for i in 0...9 { g["kp\(i)"] = "(kp)\(i)" }
+    return g
+}()
+
+/// shift-kpdot -> shift-(kp). ; tokens without a glyph pass through unchanged
+func displayToken(_ token: String) -> String {
+    let parts = token.split(separator: "-").map(String.init)
+    guard let last = parts.last, let glyph = keyGlyphs[last.lowercased()] else { return token }
+    return (parts.dropLast() + [glyph]).joined(separator: "-")
+}
+
 struct ContentView: View {
     @State private var layer: UInt8 = 1
     @State private var bindings: [UInt8: [UInt8: String]] = [:] // layer -> keyID -> chords
@@ -90,6 +110,10 @@ struct ContentView: View {
                     cyan = combination · magenta = named key
                     orange = media/mouse · red = invalid
 
+                    Chips show punctuation and keypad keys as the real \
+                    character: `dot` → **.** and `kpdot` → **(kp).** \
+                    The field itself always uses the names.
+
                     **Write** sends the binding to the keyboard.
                     """)
                 }
@@ -126,7 +150,7 @@ struct ContentView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(Array(tokens.enumerated()), id: \.offset) { _, token in
-                            Text(token)
+                            Text(displayToken(token))
                                 .font(.caption.monospaced())
                                 .padding(.horizontal, 7).padding(.vertical, 3)
                                 .background(chipColor(token).opacity(0.18), in: Capsule())
@@ -195,7 +219,7 @@ struct ContentView: View {
                     keyPickerShown = true
                 } label: {
                     HStack {
-                        Text(composerKey)
+                        Text(displayToken(composerKey))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down").font(.caption2)
                     }
@@ -210,12 +234,13 @@ struct ContentView: View {
                                 ForEach(keyGroups, id: \.0) { group, keys in
                                     let hits = keys.filter {
                                         keyQuery.isEmpty || $0.contains(keyQuery.lowercased())
+                                            || displayToken($0).contains(keyQuery.lowercased())
                                     }
                                     if !hits.isEmpty {
                                         Text(group).font(.caption).foregroundStyle(.secondary)
                                             .padding(.top, 4)
                                         ForEach(hits, id: \.self) { key in
-                                            Button(key) {
+                                            Button(displayToken(key)) {
                                                 composerKey = key
                                                 keyPickerShown = false
                                             }
@@ -350,7 +375,8 @@ struct ContentView: View {
                             .foregroundStyle(.orange)
                     }
                 }
-                Text(bound.isEmpty ? "—" : bound)
+                Text(bound.isEmpty ? "—"
+                     : bound.split(separator: " ").map { displayToken(String($0)) }.joined(separator: " "))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
