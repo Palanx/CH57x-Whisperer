@@ -27,7 +27,7 @@ func isNewerVersion(_ candidate: String, than current: String) -> Bool {
     return false
 }
 
-final class Updater: NSObject, ObservableObject {
+final class Updater: NSObject, ObservableObject, NSMenuDelegate {
     static let shared = Updater()
 
     enum Host { case gui, agent, cli }
@@ -49,6 +49,15 @@ final class Updater: NSObject, ObservableObject {
         check()
         Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             self?.check()
+        }
+    }
+
+    /// NSMenuDelegate: re-check when the user opens the Help / status menu, so
+    /// a release published after the last 6-hourly check shows up immediately.
+    func menuWillOpen(_ menu: NSMenu) {
+        switch state {
+        case .upToDate, .checkFailed: check()
+        default: break // don't disturb an offer or a running download
         }
     }
 

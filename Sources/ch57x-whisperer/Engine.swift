@@ -218,6 +218,9 @@ private final class HotkeyAgent: NSObject {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Agent", action: #selector(NSApplication.terminate(_:)),
                      keyEquivalent: "q")
+        if Bundle.main.bundlePath.hasSuffix(".app") {
+            menu.delegate = Updater.shared // re-check for updates on menu open
+        }
         statusItem.menu = menu
     }
 

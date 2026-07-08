@@ -667,6 +667,7 @@ func runGUI() {
             }
         }
         updater.startChecking()
+        helpMenu.delegate = updater // re-check on menu open
     } else {
         updateItem.title = "Updates: app installs only"
     }
