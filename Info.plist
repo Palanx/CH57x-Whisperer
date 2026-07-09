@@ -18,7 +18,7 @@
 	     (rm .build/*/debug/ch57x-whisperer) after changing it.
 	     Editing via PlistBuddy strips these comments; edit by hand. -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.3</string>
+	<string>1.2.4</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

@@ -92,7 +92,7 @@ func mouthIcon(update: Bool = false) -> NSImage {
     return image
 }
 
-private final class HotkeyAgent: NSObject {
+private final class HotkeyAgent: NSObject, NSApplicationDelegate {
     struct Binding {
         let token: String
         let script: URL
@@ -224,6 +224,28 @@ private final class HotkeyAgent: NSObject {
         statusItem.menu = menu
     }
 
+    // The running agent owns the bundle's LaunchServices registration, so a
+    // Finder/Dock open of the .app lands here instead of launching anything —
+    // hand off to a real GUI process (or the one already running).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        print("reopen event received")
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let gui = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == Bundle.main.bundleIdentifier
+                && $0.processIdentifier != me && $0.activationPolicy == .regular
+        }) {
+            print("activating existing gui pid \(gui.processIdentifier)")
+            gui.activate(options: [.activateIgnoringOtherApps])
+        } else if let exe = Bundle.main.executableURL {
+            print("spawning gui: \(exe.path)")
+            let gui = Process()
+            gui.executableURL = exe
+            gui.arguments = ["gui"]
+            do { try gui.run() } catch { print("gui spawn failed: \(error)") }
+        }
+        return false
+    }
+
     func writeExampleScript() {
         let example = actionsDir.appendingPathComponent("f13.sh.example")
         guard !FileManager.default.fileExists(atPath: example.path) else { return }
@@ -309,6 +331,7 @@ func runAgent(args: [String]) throws {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
     let agent = HotkeyAgent()
+    app.delegate = agent
     agent.start()
     print("agent running — scripts: \(actionsDir.path)")
     app.run()
