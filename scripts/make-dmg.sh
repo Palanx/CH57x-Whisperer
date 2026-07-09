@@ -51,13 +51,59 @@ cat > "dist/$APP.app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# Nested faceless helper app: the agent runs from here with its OWN bundle id
+# and LSUIElement=true, so LaunchServices never confuses it with the GUI — no
+# shared Dock icon, no cross-quit. Same binary and version, its own colored icon.
+HELPER="dist/$APP.app/Contents/Helpers/Action Whisperer.app"
+mkdir -p "$HELPER/Contents/MacOS" "$HELPER/Contents/Resources"
+cp "$BIN" "$HELPER/Contents/MacOS/action-whisperer"
+
+AGENT_ICONSET="dist/agent-icon.iconset"
+mkdir "$AGENT_ICONSET"
+AGENT_ICON_PNG="$AGENT_ICONSET/icon_512x512@2x.png" "$BIN" gui
+for s in 16 32 128 256 512; do
+  sips -z $s $s "$AGENT_ICONSET/icon_512x512@2x.png" --out "$AGENT_ICONSET/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s*2)) $((s*2)) "$AGENT_ICONSET/icon_512x512@2x.png" --out "$AGENT_ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$AGENT_ICONSET" -o "$HELPER/Contents/Resources/agent-icon.icns"
+rm -rf "$AGENT_ICONSET"
+
+cat > "$HELPER/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.palanx.ch57x-whisperer.agent</string>
+	<key>CFBundleName</key>
+	<string>Action Whisperer</string>
+	<key>CFBundleDisplayName</key>
+	<string>Action Whisperer</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$VERSION</string>
+	<key>CFBundleExecutable</key>
+	<string>action-whisperer</string>
+	<key>CFBundleIconFile</key>
+	<string>agent-icon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+EOF
+
 # NOTE: the agent login item is a plain plist in ~/Library/LaunchAgents
 # (written by `agent --install`), NOT an SMAppService plist in the bundle:
 # SMAppService pins the code signature and ad-hoc re-signs break it on
 # every update. Needs a Developer ID to revisit.
 
-# Ad-hoc signature: enough to run on Apple Silicon; downloaders still
-# right-click > Open once (no Developer ID / notarization).
+# Ad-hoc signature, inside-out (codesign requires the nested helper signed
+# first): enough to run on Apple Silicon; downloaders still right-click > Open
+# once (no Developer ID / notarization).
+codesign --force -s - "$HELPER"
 codesign --force --deep -s - "dist/$APP.app"
 
 STAGE="dist/dmg"

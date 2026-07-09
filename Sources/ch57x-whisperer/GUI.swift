@@ -610,6 +610,55 @@ func appIcon(size: CGFloat = 512) -> NSImage {
     }
 }
 
+// Agent ("Action Whisperer") app icon: the whisperer's lips from mouthIcon(),
+// but full-color like appIcon() and centered on the same squircle with no
+// keyboard — the app that acts on what the keyboard says. The lip curves are
+// the frozen shared design (also in appIcon/mouthIcon); only the transform
+// differs (2x, centered, whole lower lip shown since no pad hides it).
+func agentIcon(size: CGFloat = 512) -> NSImage {
+    NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+        let s = size / 512
+        func rr(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat,
+                _ r: CGFloat) -> NSBezierPath {
+            NSBezierPath(roundedRect: NSRect(x: x * s, y: y * s, width: w * s, height: h * s),
+                         xRadius: r * s, yRadius: r * s)
+        }
+        let body = rr(32, 32, 448, 448, 104)
+        NSGradient(starting: NSColor(calibratedRed: 0.17, green: 0.17, blue: 0.22, alpha: 1),
+                   ending: NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1))!
+            .draw(in: body, angle: -90)
+        body.addClip()
+
+        func mpt(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+            NSPoint(x: (256 + (x - 394) * 2.0) * s, y: (256 + (y - 237) * 2.0) * s)
+        }
+        let lipDark = NSColor(calibratedRed: 0.78, green: 0.12, blue: 0.32, alpha: 1)
+        let lipLight = NSColor(calibratedRed: 0.93, green: 0.25, blue: 0.42, alpha: 1)
+
+        let lower = NSBezierPath()
+        lower.move(to: mpt(322, 256))
+        lower.curve(to: mpt(394, 240), controlPoint1: mpt(338, 247), controlPoint2: mpt(368, 241))
+        lower.curve(to: mpt(466, 256), controlPoint1: mpt(420, 241), controlPoint2: mpt(450, 247))
+        lower.curve(to: mpt(394, 178), controlPoint1: mpt(446, 202), controlPoint2: mpt(424, 178))
+        lower.curve(to: mpt(322, 256), controlPoint1: mpt(364, 178), controlPoint2: mpt(342, 202))
+        lower.close()
+        lipLight.setFill()
+        lower.fill()
+
+        let upper = NSBezierPath()
+        upper.move(to: mpt(322, 256))
+        upper.curve(to: mpt(372, 296), controlPoint1: mpt(334, 278), controlPoint2: mpt(356, 296))
+        upper.curve(to: mpt(394, 289), controlPoint1: mpt(382, 296), controlPoint2: mpt(387, 289))
+        upper.curve(to: mpt(416, 296), controlPoint1: mpt(401, 289), controlPoint2: mpt(406, 296))
+        upper.curve(to: mpt(466, 256), controlPoint1: mpt(432, 296), controlPoint2: mpt(454, 278))
+        upper.curve(to: mpt(322, 256), controlPoint1: mpt(428, 261), controlPoint2: mpt(360, 261))
+        upper.close()
+        lipDark.setFill()
+        upper.fill()
+        return true
+    }
+}
+
 func runGUI() {
     // ICON_PNG=<path>: write the icon and exit (used to render docs/icon.png)
     if let out = ProcessInfo.processInfo.environment["ICON_PNG"] {
@@ -617,6 +666,14 @@ func runGUI() {
         try! rep.representation(using: .png, properties: [:])!
             .write(to: URL(fileURLWithPath: out))
         print("icon written to \(out)")
+        exit(0)
+    }
+    // AGENT_ICON_PNG=<path>: same, for the Action Whisperer helper's icon.
+    if let out = ProcessInfo.processInfo.environment["AGENT_ICON_PNG"] {
+        let rep = NSBitmapImageRep(data: agentIcon(size: 1024).tiffRepresentation!)!
+        try! rep.representation(using: .png, properties: [:])!
+            .write(to: URL(fileURLWithPath: out))
+        print("agent icon written to \(out)")
         exit(0)
     }
     let app = NSApplication.shared
@@ -632,6 +689,24 @@ func runGUI() {
     appMenu.addItem(withTitle: "Quit CH57x Whisperer",
                     action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appMenuItem.submenu = appMenu
+
+    // Agent controls (packaged installs only — source builds use the CLI).
+    if Bundle.main.bundlePath.hasSuffix(".app") {
+        let agentMenuItem = NSMenuItem()
+        mainMenu.addItem(agentMenuItem)
+        let agentMenu = NSMenu(title: "Agent")
+        agentMenu.addItem(withTitle: "Start Action Whisperer",
+                          action: #selector(AgentControl.startAgent), keyEquivalent: "")
+            .target = AgentControl.shared
+        agentMenu.addItem(withTitle: "Start at Login",
+                          action: #selector(AgentControl.startAtLogin), keyEquivalent: "")
+            .target = AgentControl.shared
+        agentMenu.addItem(withTitle: "Remove from Login",
+                          action: #selector(AgentControl.removeFromLogin), keyEquivalent: "")
+            .target = AgentControl.shared
+        agentMenuItem.submenu = agentMenu
+    }
+
     let helpMenuItem = NSMenuItem()
     mainMenu.addItem(helpMenuItem)
     let helpMenu = NSMenu(title: "Help")

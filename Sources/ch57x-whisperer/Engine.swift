@@ -14,6 +14,20 @@ import ServiceManagement
 let actionsDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".config/ch57x-whisperer/actions")
 
+// The GUI and the agent are the same binary, but ship as two nested app
+// bundles with distinct identities so LaunchServices never confuses them:
+// opening the GUI can't wake the agent, and quitting one can't kill the other.
+// The agent lives inside the main bundle as a faceless (LSUIElement) helper.
+let mainBundleID = "com.palanx.ch57x-whisperer"
+let agentBundleID = "com.palanx.ch57x-whisperer.agent"
+
+/// The nested "Action Whisperer" helper executable inside a packaged main
+/// bundle. Present only in .app builds, never in source builds.
+func helperExecutableURL(inMainBundle bundle: URL) -> URL {
+    bundle.appendingPathComponent(
+        "Contents/Helpers/Action Whisperer.app/Contents/MacOS/action-whisperer")
+}
+
 // macOS virtual keycodes (kVK_F13...kVK_F20); F21-F24 have none, hence the cap.
 let hotkeyFKeys: [String: UInt32] = [
     "f13": 105, "f14": 107, "f15": 113, "f16": 106,
@@ -92,7 +106,7 @@ func mouthIcon(update: Bool = false) -> NSImage {
     return image
 }
 
-private final class HotkeyAgent: NSObject, NSApplicationDelegate {
+private final class HotkeyAgent: NSObject {
     struct Binding {
         let token: String
         let script: URL
@@ -224,28 +238,6 @@ private final class HotkeyAgent: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    // The running agent owns the bundle's LaunchServices registration, so a
-    // Finder/Dock open of the .app lands here instead of launching anything —
-    // hand off to a real GUI process (or the one already running).
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        print("reopen event received")
-        let me = ProcessInfo.processInfo.processIdentifier
-        if let gui = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == Bundle.main.bundleIdentifier
-                && $0.processIdentifier != me && $0.activationPolicy == .regular
-        }) {
-            print("activating existing gui pid \(gui.processIdentifier)")
-            gui.activate(options: [.activateIgnoringOtherApps])
-        } else if let exe = Bundle.main.executableURL {
-            print("spawning gui: \(exe.path)")
-            let gui = Process()
-            gui.executableURL = exe
-            gui.arguments = ["gui"]
-            do { try gui.run() } catch { print("gui spawn failed: \(error)") }
-        }
-        return false
-    }
-
     func writeExampleScript() {
         let example = actionsDir.appendingPathComponent("f13.sh.example")
         guard !FileManager.default.fileExists(atPath: example.path) else { return }
@@ -294,30 +286,94 @@ private func removeLegacyLaunchAgent() {
     print("removed \(launchAgentPlist.path)")
 }
 
-private func installLaunchAgent() throws {
-    // clean up any SMAppService registration from earlier experiments
-    try? SMAppService.agent(plistName: "com.palanx.ch57x-whisperer.agent.plist").unregister()
-    let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
+/// The executable the LaunchAgent should run: the nested Action Whisperer
+/// helper when we can find it (a packaged .app install), otherwise the
+/// invoking binary — the helper re-installing itself, or a source build.
+private func agentExecutablePath() -> String {
+    if Bundle.main.bundleIdentifier == mainBundleID {
+        let helper = helperExecutableURL(inMainBundle: Bundle.main.bundleURL)
+        if FileManager.default.fileExists(atPath: helper.path) { return helper.path }
+    }
+    return URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
+}
+
+private func writeLaunchAgentPlist() throws {
     let plist: [String: Any] = [
         "Label": launchAgentLabel,
-        "ProgramArguments": [binary, "agent"],
+        "ProgramArguments": [agentExecutablePath(), "agent"],
         "RunAtLoad": true,
         "StandardOutPath": "/tmp/ch57x-agent.log",
         "StandardErrorPath": "/tmp/ch57x-agent.log",
     ]
     let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     try data.write(to: launchAgentPlist)
+}
+
+private func installLaunchAgent() throws {
+    // clean up any SMAppService registration from earlier experiments
+    try? SMAppService.agent(plistName: "com.palanx.ch57x-whisperer.agent.plist").unregister()
+    try writeLaunchAgentPlist()
     launchctl(["unload", launchAgentPlist.path], quiet: true) // replace a previous install cleanly
     launchctl(["load", "-w", launchAgentPlist.path])
     print("""
     installed \(launchAgentPlist.path)
-    runs at login: \(binary) agent   (log: /tmp/ch57x-agent.log)
+    runs at login: \(agentExecutablePath()) agent   (log: /tmp/ch57x-agent.log)
     """)
 }
 
 private func uninstallLaunchAgent() {
     try? SMAppService.agent(plistName: "com.palanx.ch57x-whisperer.agent.plist").unregister()
     removeLegacyLaunchAgent()
+}
+
+// One-time migration for installs from <= 1.2.4, whose LaunchAgent pointed at
+// the main bundle's binary — so the agent ran under the GUI's identity and
+// fought it in the Dock. If we're that legacy agent (running from the main
+// bundle, with the new helper sitting beside us), repoint the plist at the
+// helper and reload it out of band — unloading our own job would SIGTERM us
+// mid-command — then let this process exit. Returns true when it migrated.
+private func migrateToHelperIfNeeded() -> Bool {
+    guard Bundle.main.bundleIdentifier == mainBundleID else { return false }
+    let helper = helperExecutableURL(inMainBundle: Bundle.main.bundleURL)
+    guard FileManager.default.fileExists(atPath: helper.path),
+          FileManager.default.fileExists(atPath: launchAgentPlist.path),
+          (try? writeLaunchAgentPlist()) != nil else { return false }
+    let pid = ProcessInfo.processInfo.processIdentifier
+    let script = """
+    #!/bin/zsh
+    while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
+    launchctl unload '\(launchAgentPlist.path)' 2>/dev/null
+    launchctl load -w '\(launchAgentPlist.path)'
+    rm -- "$0"
+    """
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent("ch57x-migrate.sh")
+    if (try? script.write(to: path, atomically: true, encoding: .utf8)) != nil {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        proc.arguments = [path.path]
+        try? proc.run()
+    }
+    return true
+}
+
+// Start the agent for the current session from the GUI: via the login item if
+// one is installed, otherwise by opening the nested helper app directly.
+func startAgentNow() {
+    if FileManager.default.fileExists(atPath: launchAgentPlist.path) {
+        launchctl(["start", launchAgentLabel])
+    } else if Bundle.main.bundleIdentifier == mainBundleID {
+        let app = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Action Whisperer.app")
+        if FileManager.default.fileExists(atPath: app.path) { NSWorkspace.shared.open(app) }
+    }
+}
+
+// Target for the GUI's Agent menu — menu items need an @objc target that lives
+// as long as the menu.
+final class AgentControl: NSObject {
+    static let shared = AgentControl()
+    @objc func startAgent() { startAgentNow() }
+    @objc func startAtLogin() { try? installLaunchAgent() }
+    @objc func removeFromLogin() { uninstallLaunchAgent() }
 }
 
 func runAgent(args: [String]) throws {
@@ -328,11 +384,14 @@ func runAgent(args: [String]) throws {
     case nil: break
     }
     setvbuf(stdout, nil, _IOLBF, 0) // line-buffer so the LaunchAgent log is live
+    if migrateToHelperIfNeeded() {
+        print("migrated LaunchAgent to the Action Whisperer helper; relaunching")
+        return // launchd restarts us as the helper
+    }
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
     let agent = HotkeyAgent()
-    app.delegate = agent
     agent.start()
-    print("agent running — scripts: \(actionsDir.path)")
+    print("agent running (\(Bundle.main.bundleIdentifier ?? "unbundled")) — scripts: \(actionsDir.path)")
     app.run()
 }

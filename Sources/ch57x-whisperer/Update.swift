@@ -153,13 +153,14 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
                         kill: instances.agents + instances.guis)
     }
 
-    // The launchd-spawned agent's command line is just "ch57x-whisperer agent"
-    // (argv[0] from the bundled plist, no path), the Finder-launched GUI is the
-    // full bundle path — match by shape, collect pids, never pattern-kill.
+    // The agent's command line ends in " agent" (the helper's action-whisperer
+    // binary, or a source build's ch57x-whisperer), the Finder-launched GUI is
+    // the full bundle path — match by shape, collect pids, never pattern-kill.
+    // Grep "whisperer" so both binary names (ch57x-/action-) are caught.
     private func runningInstances() -> (agents: [Int], guis: [Int]) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-fl", "ch57x-whisperer"]
+        process.arguments = ["-fl", "whisperer"]
         let pipe = Pipe()
         process.standardOutput = pipe
         try? process.run()
@@ -181,7 +182,6 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func spawnRelauncher(gui: Bool, agent: Bool, kill pids: [Int]) {
-        let binary = installedApp + "/Contents/MacOS/ch57x-whisperer"
         var script = """
         #!/bin/zsh
         # wait for the updating process to exit, then bounce the rest
@@ -190,10 +190,11 @@ final class Updater: NSObject, ObservableObject, NSMenuDelegate {
         if !pids.isEmpty { script += "\nkill \(pids.map(String.init).joined(separator: " ")) 2>/dev/null" }
         script += "\nsleep 1"
         if agent {
-            // the login item plist is path-based, so it survived the replace;
-            // start it again — or plain-spawn if the agent wasn't installed
+            // the login item plist is path-based, so it survived the replace and
+            // now points at the nested helper; start it again — or open the
+            // helper app directly if the agent wasn't installed as a login item
             script += "\nlaunchctl start ch57x-whisperer.agent 2>/dev/null" +
-                      " || nohup '\(binary)' agent >> /tmp/ch57x-agent.log 2>&1 &"
+                      " || open '\(installedApp)/Contents/Helpers/Action Whisperer.app'"
         }
         if gui { script += "\nopen -a 'CH57x Whisperer'" }
         script += "\nrm -- \"$0\"\n"

@@ -270,8 +270,12 @@ if let old = UserDefaults(suiteName: "ch57x-whisperer") {
 var args = Array(CommandLine.arguments.dropFirst())
 do {
     switch args.first {
-    // No args + running from an .app bundle = double-clicked in Finder.
-    case nil: Bundle.main.bundlePath.hasSuffix(".app") ? runGUI() : probe()
+    // No args: the Action Whisperer helper runs the agent; the main app run
+    // from Finder opens the GUI; a bare terminal invocation probes.
+    case nil:
+        if Bundle.main.bundleIdentifier == agentBundleID { try runAgent(args: []) }
+        else if Bundle.main.bundlePath.hasSuffix(".app") { runGUI() }
+        else { probe() }
     case "probe": probe()
     case "selftest": selftest()
     case "gui": runGUI()
