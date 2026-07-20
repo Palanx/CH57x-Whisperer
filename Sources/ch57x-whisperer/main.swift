@@ -232,6 +232,31 @@ func selftest() {
     assert(isNewerVersion("2.0", than: "1.9.9"), "major bump wins")
     assert(appVersion != "0", "CFBundleShortVersionString missing from Info.plist")
 
+    // GUI LED preview on the 12-key pad (4 wide, key 1 = top-left, key 12 = bottom-right)
+    assert(ledGlow(mode: "off", key: 1, selected: 1, at: 0) == 0, "off lights nothing")
+    assert(ledGlow(mode: "backlight", key: 7, selected: 1, at: 0) == 1, "backlight lights all")
+    assert(ledGlow(mode: "press", key: 5, selected: 5, at: 0) == 1
+           && ledGlow(mode: "press", key: 6, selected: 5, at: 0) == 0,
+           "press lights only the selected key")
+    // the sweep starts on key 1 and ends on key 12, one lit position crossfading
+    // along the pad; sweep-reverse is the same walk backwards
+    let lastStep = ledSweepSeconds // head reaches key 12 exactly at the end
+    assert(ledGlow(mode: "sweep", key: 1, selected: 1, at: 0) == 1
+           && ledGlow(mode: "sweep", key: 12, selected: 1, at: lastStep.nextDown) > 0.99,
+           "sweep walks 1 → 12")
+    assert(ledGlow(mode: "sweep-reverse", key: 12, selected: 1, at: 0) == 1
+           && ledGlow(mode: "sweep-reverse", key: 1, selected: 1, at: lastStep.nextDown) > 0.99,
+           "sweep-reverse walks 12 → 1")
+    // mid-crossfade two neighbours share the light, and the total never exceeds one key
+    for t in stride(from: 0.0, to: ledSweepSeconds, by: 0.01) {
+        let total = (1...12).map { ledGlow(mode: "sweep", key: $0, selected: 1, at: t) }
+            .reduce(0, +)
+        assert(abs(total - 1) < 1e-9, "one key's worth of light at t=\(t), got \(total)")
+    }
+    assert((1...12).allSatisfy {
+        ledGlow(mode: "sweep", key: $0, selected: 1, at: ledSweepSeconds + 0.5) == 0
+    }, "pad rests dark between sweeps")
+
     print("selftest OK")
 }
 

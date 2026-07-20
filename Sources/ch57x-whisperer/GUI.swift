@@ -56,6 +56,28 @@ func displayToken(_ token: String) -> String {
     return (parts.dropLast() + [glyph]).joined(separator: "-")
 }
 
+/// LED preview on the 12-key pad: how bright key `n` (1-12) is at time `t`, 0…1.
+/// The sweep runs the keys 1 → 12 (sweep-reverse, 12 → 1) in `ledSweepSeconds`, each key
+/// fading out as the next fades in, then the pad rests dark for `ledSweepPauseSeconds`
+/// before repeating. `press` lights only the key being edited — the real mode lights
+/// whichever key you actually press.
+let ledSweepSeconds = 0.9
+let ledSweepPauseSeconds = 2.0
+
+func ledGlow(mode: String, key n: Int, selected: Int, at t: TimeInterval) -> Double {
+    switch mode {
+    case "backlight": return 1
+    case "press": return selected == n ? 1 : 0
+    case "sweep", "sweep-reverse":
+        let cycle = t.truncatingRemainder(dividingBy: ledSweepSeconds + ledSweepPauseSeconds)
+        guard cycle < ledSweepSeconds else { return 0 } // resting between sweeps
+        let head = cycle / ledSweepSeconds * 11 // 0 … 11, the lit position
+        let pos = Double(mode == "sweep" ? n - 1 : 12 - n)
+        return max(0, 1 - abs(pos - head)) // only the two keys astride `head` glow
+    default: return 0 // off
+    }
+}
+
 struct ContentView: View {
     @State private var layer: UInt8 = 1
     @State private var bindings: [UInt8: [UInt8: String]] = [:] // layer -> keyID -> chords
@@ -87,9 +109,14 @@ struct ContentView: View {
 
             Label("keys", systemImage: "square.grid.4x3.fill")
                 .font(.caption).foregroundStyle(.secondary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
-                ForEach(1...12, id: \.self) { n in
-                    slot(UInt8(n), title: "\(n)")
+            TimelineView(.animation) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
+                    ForEach(1...12, id: \.self) { n in
+                        slot(UInt8(n), title: "\(n)",
+                             glow: ledGlow(mode: ledMode, key: n,
+                                           selected: Int(selected), at: t))
+                    }
                 }
             }
 
@@ -272,7 +299,10 @@ struct ContentView: View {
                     **LED backlight** — for the layer selected above.
 
                     Pick a mode and a color, then **Set**. \
-                    The dot previews your choice.
+                    The 12-key pad above previews the mode: *backlight* lights \
+                    every key, *sweep* / *sweep-reverse* run the wave across it, \
+                    *press* lights only the key you are editing (on the real \
+                    keyboard, whichever key you press).
 
                     **Limitation:** the keyboard can't report its LED \
                     state, so this display is a memory, not a readout — \
@@ -284,9 +314,6 @@ struct ContentView: View {
                     """)
                 }
                 .frame(width: 110, alignment: .leading)
-                LEDDot(color: ledSwiftUIColor, mode: ledMode)
-                    .id("\(layer)-\(ledMode)-\(ledColor)") // restart the breathing on any change
-                Spacer()
                 Picker("", selection: $ledMode) {
                     ForEach(["off", "backlight", "sweep", "sweep-reverse", "press"], id: \.self) { Text($0) }
                 }
@@ -360,7 +387,7 @@ struct ContentView: View {
         }
     }
 
-    private func slot(_ id: UInt8, title: String) -> some View {
+    private func slot(_ id: UInt8, title: String, glow: Double = 0) -> some View {
         let bound = bindings[layer]?[id] ?? ""
         let delay = delays[layer]?[id] ?? 0
         return Button {
@@ -386,6 +413,13 @@ struct ContentView: View {
         }
         .buttonStyle(.bordered)
         .tint(selected == id ? .accentColor : nil)
+        // the LED preview only radiates: a lit rim plus halo, never a fill —
+        // tinting the tile's inside made the binding labels unreadable
+        .overlay(RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(ledSwiftUIColor.opacity(glow), lineWidth: 1.5)
+            .allowsHitTesting(false))
+        .shadow(color: ledSwiftUIColor.opacity(glow * 0.9), radius: glow * 5)
+        .shadow(color: ledSwiftUIColor.opacity(glow * 0.5), radius: glow * 12)
     }
 
     private func select(_ id: UInt8) {
@@ -455,39 +489,6 @@ struct ContentView: View {
         } catch {
             status = "\(error)"
         }
-    }
-}
-
-/// tiny LED preview, one look per mode: off = gray, backlight = steady glow,
-/// sweep/sweep-reverse = pulsing, press = dim until a key would light it.
-/// The real sweep runs key by key across the pad; a single dot can't show that, so the
-/// pulse just means "this mode animates" rather than mimicking it.
-private struct LEDDot: View {
-    let color: Color
-    let mode: String
-    @State private var dim = false
-
-    private var breathDuration: Double? {
-        switch mode {
-        case "sweep", "sweep-reverse": 1.0
-        default: nil // off, backlight, press: static
-        }
-    }
-
-    var body: some View {
-        let off = mode == "off"
-        let press = mode == "press"
-        Circle()
-            .fill(off ? Color.gray.opacity(0.35) : color)
-            .frame(width: 11, height: 11)
-            .shadow(color: off || press ? .clear : color.opacity(0.8), radius: dim ? 1 : 5)
-            .opacity(off ? 1 : press ? 0.35 : dim ? 0.25 : 1)
-            .onAppear {
-                guard let duration = breathDuration else { return }
-                withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
-                    dim = true
-                }
-            }
     }
 }
 
