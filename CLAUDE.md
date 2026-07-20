@@ -38,12 +38,48 @@ Under `Sources/ch57x-whisperer/`:
 - Media bind: type byte `0x02`, consumer usage u16 LE at bytes 11–12 (playpause=0xCD, calculator=0x192). Mouse bind: type `0x03`, subtype at byte 10 (1=click, 3=wheel), modifiers at 11, buttons at 12 (left=1 right=2 middle=4), wheel delta at 15 (1=up, 0xFF=down). Media/mouse bindings hold ONE action, never a chord sequence.
 - LED: `[0x03, 0xfe, 0xb0, layer, 0x08, 0,0,0,0,0, 0x01, 0, (color<<4)|mode]` + `[03 fd fe ff]`, preceded by the commit preamble below. Colors: 0=white 1=red 2=orange 3=yellow 4=green 5=cyan 6=blue 7=purple. LED state is per layer and only visible on the layer the physical switch is on; it can never be read back. The LEDs are also dark right after connecting — they light up on the first layer-switch change.
 - Modes, verified on hardware 2026-07-20 **with correct 65-byte messages**: 0=off, 1=steady backlight, 2=sweep top-left → bottom-right (`sweep`), 3=the mirrored sweep (`sweep-reverse`), 4=lights the key you press, 5=always white. The reference ports call 2/3 `shock`/`shock2`; we renamed them to what they do.
-- The "breathing" behaviour these modes used to show was **an artifact of the truncated 64-byte messages**, not a real firmware mode — it disappeared once the wire length was fixed. By the same token, the earlier "mode nibbles 6–15 are no-ops" finding was measured with the broken messages and is **not trustworthy**; 6–15 have never been swept properly and may hold more modes.
+- The "breathing" behaviour these modes used to show was **an artifact of the truncated 64-byte messages**, not a real firmware mode — it disappeared once the wire length was fixed. Mode nibbles 6–15 were then re-swept with correct 65-byte writes (the first sweep, with broken messages, did not count): still nothing, no visible effect at all. 0–5 is the complete set.
 - **LED persistence — SOLVED 2026-07-20.** LED colours used to die on every keyboard power cycle (they applied live, then reverted). Two causes, neither of them in the LED message's content, which was correct all along:
   1. **Wire length.** Messages must be 65 bytes (report ID + 64 payload); we sent 64. `Read.swift`'s query constants were genuine 65-byte captures that we truncated with `.prefix(64)`.
   2. **The commit preamble.** The write only reaches flash when preceded by the vendor's query sequence — `03 fb fb fb 01` then `03 fa 0f 03 <layer> 7f` for layers 1,2,3 — **on the same open HID session**. `Ch57x.ledCommitPreamble()`; `setLED` prepends it, so always send the whole returned array through ONE `KeyboardDevice`. Neither reference port does this, which is why upstream has the same bug.
   Losing either is silent (the LED still lights up, it just stops persisting), so `selftest` pins the 65-byte length and the preamble's shape.
-- How it was found: the vendor app (`~/Downloads/LEN/MINI_KEYBOARD.app`, x86 Qt under Rosetta) is **unsigned**, so `DYLD_INSERT_LIBRARIES` with a small dylib interposing `IOHIDDeviceSetReport` logs exactly what it sends — no Wireshark, no sudo, no VM. That capture answered in one shot what ~8 power cycles of blind sweeping could not. **If a protocol question ever comes up again, capture the vendor app first.** Note it holds the HID device exclusively: while it is open our writes fail with `0xe00002c5`.
+- **Capturing the vendor app — do this FIRST for any protocol question.** The vendor app (`~/Downloads/LEN/MINI_KEYBOARD.app`, x86 Qt under Rosetta) is **unsigned**, so `DYLD_INSERT_LIBRARIES` works on it: a small dylib interposing `IOHIDDeviceSetReport` logs exactly what it sends. No Wireshark, no sudo, no VM, no reboot. This answered in one shot what ~8 power cycles of blind sweeping could not — reach for it before ever sweeping bytes again.
+
+  Write a C file with this shape (the `__DATA,__interpose` section is what dyld swaps):
+
+  ```c
+  #include <stdio.h>
+  #include <IOKit/hid/IOHIDDevice.h>
+  struct interpose_entry { const void *replacement; const void *replacee; };
+  static IOReturn cap(IOHIDDeviceRef d, IOHIDReportType t, CFIndex rid,
+                      const uint8_t *r, CFIndex len) {
+      FILE *f = fopen("/tmp/mini_keyboard_capture.log", "a");
+      if (f) { fprintf(f, "id=%ld len=%ld :", (long)rid, (long)len);
+               for (CFIndex i = 0; i < len; i++) fprintf(f, " %02x", r[i]);
+               fprintf(f, "\n"); fclose(f); }
+      return IOHIDDeviceSetReport(d, t, rid, r, len);
+  }
+  __attribute__((used)) static struct interpose_entry ip[]
+  __attribute__((section("__DATA,__interpose"))) =
+      {{ (const void *)cap, (const void *)IOHIDDeviceSetReport }};
+  ```
+
+  Build it **for x86_64** (the app runs under Rosetta, so the dylib must match), then launch
+  the app with it — note the executable inside the bundle, not `open`, or the env var is lost:
+
+  ```
+  clang -arch x86_64 -dynamiclib -framework IOKit -framework CoreFoundation -o hidcapture.dylib hidcapture.c
+  rm -f /tmp/mini_keyboard_capture.log
+  DYLD_INSERT_LIBRARIES=$PWD/hidcapture.dylib "$HOME/Downloads/LEN/MINI_KEYBOARD.app/Contents/MacOS/MINI_KEYBOARD" &
+  ```
+
+  Then do the thing in its UI and read the log. Tips: apply the same action to two different
+  layers so the layer byte tells the messages apart; the tails after the meaningful bytes are
+  uninitialised heap, so ignore them; and interpose `IOHIDDeviceSetReportWithCallback` too if a
+  log comes back empty. The app holds the HID device **exclusively** — while it is open our own
+  writes fail with `0xe00002c5`, so `pkill -f MINI_KEYBOARD` before testing our side. Replay a
+  captured sequence with the `raw` command, which sends every `--`-separated message through one
+  session (session-scoped behaviour is real here — that is what the LED commit turned out to be).
 - Ruled out along the way, so nobody repeats it: the `[03 aa aa]` bookends are not a commit; mode nibbles 6–15 are no-ops (this closes the 2026-07-07 "observed behavior undocumented" question); `read` after a write does not commit. Caveat on all of it: the first batch appears to have *erased* layer 1's slot, after which the "did flash change?" signal was gone and every later bisection had no detection power — those no-ops proved nothing at the time.
 - Still open: the vendor exposes a **key-by-key sweep mode** (top-left → bottom-right, plus its mirror) that no value of our mode nibble reaches, so its LED encoding differs from ours somewhere. Capture it the same way rather than guessing.
 - Read-back (see `Read.swift`, ported from [kamaaina/macropad_tool](https://github.com/kamaaina/macropad_tool)): send device-type query `0x03 0xfb...`, then per-layer `0x03 0xfa keys knobs layer...`; device answers one input report per key/knob action shaped like the bind message (delay is big-endian in responses). Query tails are verbatim USB captures — replay them exactly.
