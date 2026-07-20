@@ -16,7 +16,7 @@ and a SwiftUI GUI for humans. No drivers, no hidapi, no third-party dependencies
 - **Bind keys and knobs** — up to 18 chords per key (e.g. `ctrl-shift-t`, `cmd-f13`),
   with an optional delay between steps, on any of the 3 layers
 - **Media and mouse actions** — play/pause, volume, brightness, clicks, wheel, etc.
-- **LED backlight** — per-layer mode (off, backlight, shock, press…) and color
+- **LED backlight** — per-layer mode (off, backlight, sweep, press…) and color, and they now survive a power cycle
 - **Read back** the configuration stored in the keyboard
 - **Record macros** by typing them on your real keyboard
 - **GUI** — key grid, layer tabs, chord composer with searchable key picker (F13–F24

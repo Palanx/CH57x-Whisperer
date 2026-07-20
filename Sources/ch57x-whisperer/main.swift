@@ -120,10 +120,12 @@ let ledColors = ["white": 0, "red": 1, "orange": 2, "yellow": 3,
 
 func parseLED(_ mode: String) throws -> (mode: UInt8, color: UInt8) {
     if mode == "off" { return (0, 0) }
-    let modes = ["backlight": 1, "shock": 2, "shock2": 3, "press": 4]
+    let modes = ["backlight": 1, "sweep": 2, "sweep-reverse": 3, "press": 4]
+    // Mode names can contain hyphens (sweep-reverse), so the colour is the last component.
     let parts = mode.lowercased().split(separator: "-").map(String.init)
-    guard parts.count == 2, let m = modes[parts[0]], let color = ledColors[parts[1]] else {
-        throw MiniKeyboardError("invalid led mode — off | backlight-<color> | shock-<color> | shock2-<color> | press-<color>")
+    guard parts.count >= 2, let color = ledColors[parts[parts.count - 1]],
+          let m = modes[parts.dropLast().joined(separator: "-")] else {
+        throw MiniKeyboardError("invalid led mode — off | backlight-<color> | sweep-<color> | sweep-reverse-<color> | press-<color>")
     }
     if m == 1 && color == 0 { return (5, 0) } // backlight white has its own mode code
     guard color != 0 else { throw MiniKeyboardError("white only works with backlight") }
@@ -244,7 +246,7 @@ func usage() -> Never {
           or ONE media/mouse action instead of chords:
             media: \(mediaCodes.keys.sorted().joined(separator: " "))
             mouse: [mods-]click | rclick | mclick | wheelup | wheeldown (e.g. ctrl-wheelup)
-      ch57x-whisperer led <layer 1-3> off|backlight-<color>|shock-<color>|shock2-<color>|press-<color>
+      ch57x-whisperer led <layer 1-3> off|backlight-<color>|sweep-<color>|sweep-reverse-<color>|press-<color>
           colors: white red orange yellow green cyan blue purple
       ch57x-whisperer read [layer 1-3]     print bindings stored in the keyboard
       ch57x-whisperer record [<layer 1-3> <key>]
@@ -328,8 +330,10 @@ do {
         let keyboard = try KeyboardDevice.open()
         try keyboard.send(Ch57x.setLED(layer: layer, mode: mode, color: color))
         // Keep the GUI's per-layer LED memory in sync (same binary, same defaults).
-        let parts = args[2].split(separator: "-", maxSplits: 1)
-        UserDefaults.standard.set("\(parts[0]) \(parts.count > 1 ? parts[1] : "cyan")",
+        // Split the same way parseLED does: colour last, everything before it the mode.
+        let parts = args[2].split(separator: "-").map(String.init)
+        let modeName = parts.count > 1 ? parts.dropLast().joined(separator: "-") : parts[0]
+        UserDefaults.standard.set("\(modeName) \(parts.count > 1 ? parts[parts.count - 1] : "cyan")",
                                   forKey: "led.layer\(layer)")
         print("led on layer \(layer) set to \(args[2])")
     case "raw":

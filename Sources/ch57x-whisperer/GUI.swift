@@ -288,7 +288,7 @@ struct ContentView: View {
                     .id("\(layer)-\(ledMode)-\(ledColor)") // restart the breathing on any change
                 Spacer()
                 Picker("", selection: $ledMode) {
-                    ForEach(["off", "backlight", "shock", "shock2", "press"], id: \.self) { Text($0) }
+                    ForEach(["off", "backlight", "sweep", "sweep-reverse", "press"], id: \.self) { Text($0) }
                 }
                 .frame(width: 140)
                 Picker("", selection: $ledColor) {
@@ -459,7 +459,9 @@ struct ContentView: View {
 }
 
 /// tiny LED preview, one look per mode: off = gray, backlight = steady glow,
-/// shock/shock2 = breathing (shock2 faster), press = dim until a key would light it
+/// sweep/sweep-reverse = pulsing, press = dim until a key would light it.
+/// The real sweep runs key by key across the pad; a single dot can't show that, so the
+/// pulse just means "this mode animates" rather than mimicking it.
 private struct LEDDot: View {
     let color: Color
     let mode: String
@@ -467,8 +469,7 @@ private struct LEDDot: View {
 
     private var breathDuration: Double? {
         switch mode {
-        case "shock": 1.0
-        case "shock2": 0.45
+        case "sweep", "sweep-reverse": 1.0
         default: nil // off, backlight, press: static
         }
     }
