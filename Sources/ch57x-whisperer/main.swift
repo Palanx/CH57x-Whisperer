@@ -171,10 +171,15 @@ func selftest() {
            "delay vector mismatch")
 
     let led = Ch57x.setLED(layer: 1, mode: 1, color: 5) // backlight cyan -> 0x51
-    assert(led == [
+    assert(led == Ch57x.ledCommitPreamble() + [
         Ch57x.pad([0x03, 0xfe, 0xb0, 0x01, 0x08, 0, 0, 0, 0, 0, 0x01, 0, 0x51]),
         Ch57x.pad([0x03, 0xfd, 0xfe, 0xff]),
     ], "led vector mismatch")
+    // The preamble is what makes the colour survive a power cycle — losing it is silent
+    // (the LED still lights up), so pin its shape here.
+    assert(led.count == 6 && led[0][1] == 0xfb && led[1][1] == 0xfa,
+           "led commit preamble missing")
+    assert(led.allSatisfy { $0.count == 65 }, "wire messages must be 65 bytes")
 
     let media = Ch57x.bindMedia(keyID: 2, layer: 1, code: 0xCD) // playpause
     assert(media.first == Ch57x.pad([0x03, 0xfe, 0x02, 0x01, 0x02, 0, 0, 0, 0, 0, 0, 0xCD, 0]),
@@ -327,6 +332,29 @@ do {
         UserDefaults.standard.set("\(parts[0]) \(parts.count > 1 ? parts[1] : "cyan")",
                                   forKey: "led.layer\(layer)")
         print("led on layer \(layer) set to \(args[2])")
+    case "raw":
+        // ponytail: protocol lab bench, not a feature — no validation, deliberately
+        // absent from usage(). `raw 03 fe b0 01 08 ... -- 03 fd fe ff` sends one
+        // padded 64-byte message per `--`-separated group.
+        let groups = args.dropFirst().split(separator: "--").map(Array.init)
+        guard !groups.isEmpty else { usage() }
+        let messages = try groups.map { group -> [UInt8] in
+            let bytes = try group.map { (token: String) -> UInt8 in
+                guard let byte = UInt8(token, radix: 16) else {
+                    throw MiniKeyboardError("not a hex byte: \(token)")
+                }
+                return byte
+            }
+            guard (1...Ch57x.wireLength).contains(bytes.count) else {
+                throw MiniKeyboardError("message must be 1-\(Ch57x.wireLength) bytes, got \(bytes.count)")
+            }
+            return Ch57x.pad(bytes)
+        }
+        let keyboard = try KeyboardDevice.open()
+        try keyboard.send(messages)
+        for message in messages {
+            print("sent: " + message.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ") + " ...")
+        }
     default: usage()
     }
 } catch {

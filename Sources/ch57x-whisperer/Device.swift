@@ -41,7 +41,7 @@ final class KeyboardDevice {
         return KeyboardDevice(device: device, manager: manager)
     }
 
-    /// message: 64 bytes starting with report ID 0x03 (as on the wire).
+    /// message: 65 bytes — report ID 0x03 followed by 64 payload bytes (see Protocol.swift).
     /// For numbered reports macOS wants the report ID byte kept in the data,
     /// same as hidapi's mac backend does.
     func send(_ message: [UInt8]) throws {

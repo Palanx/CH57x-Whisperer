@@ -1,6 +1,10 @@
 // CH57x config protocol for 1189:8840 keyboards (12 keys + knobs).
 // Byte layout ported from kriomant/ch57x-keyboard-tool (src/keyboard/k884x.rs).
-// Every wire message is 64 bytes, zero-padded, starting with report ID 0x03.
+// Every wire message is the report ID byte 0x03 followed by 64 zero-padded payload
+// bytes — 65 total. Sending 64 (only 63 of payload) still applies LED colours live but
+// silently skips the flash commit, so they die on the next power cycle. Verified
+// 2026-07-20 by capturing the vendor app's IOHIDDeviceSetReport calls: its bytes are
+// identical to ours, only the length differed.
 
 struct Accord {
     var modifiers: UInt8 // bitmask: ctrl=1 shift=2 alt=4 cmd=8
@@ -11,8 +15,10 @@ enum Ch57x {
     static let maxAccordsPerKey = 18
     static let maxDelayMS = 6000
 
+    static let wireLength = 65 // report ID + 64 payload bytes, as the vendor app sends
+
     static func pad(_ bytes: [UInt8]) -> [UInt8] {
-        bytes + Array(repeating: 0, count: 64 - bytes.count)
+        bytes + Array(repeating: 0, count: wireLength - bytes.count)
     }
 
     static let finish: [[UInt8]] = [
@@ -61,12 +67,24 @@ enum Ch57x {
         return [pad([0x03, 0xfe, keyID, layer, 0x03, 0, 0, 0, 0, 0] + payload)] + finish
     }
 
-    /// mode: 0=off 1=backlight 2=shock 3=shock2 4=press 5=backlight-white
+    /// The LED write only reaches flash when it is preceded by the vendor's query
+    /// preamble **on the same open HID session**. Without it the colour applies live and
+    /// then dies on the next power cycle — which is exactly the bug we chased on
+    /// 2026-07-20. Byte-for-byte what MINI_KEYBOARD sends (captured); the tails it sends
+    /// are uninitialised heap, so zeros do just as well. Neither reference port does this.
+    static func ledCommitPreamble() -> [[UInt8]] {
+        [pad([0x03, 0xfb, 0xfb, 0xfb, 0x01])]
+            + (1...3).map { pad([0x03, 0xfa, 0x0f, 0x03, UInt8($0), 0x7f]) }
+    }
+
+    /// mode: 0=off 1=backlight 2=breathing 3=breathing-slow 4=press 5=backlight-white
     /// color: 0=white 1=red 2=orange 3=yellow 4=green 5=cyan 6=blue 7=purple
+    /// Send the whole array through one KeyboardDevice — the preamble and the write must
+    /// share a session.
     static func setLED(layer: UInt8, mode: UInt8, color: UInt8) -> [[UInt8]] {
         precondition((1...3).contains(layer), "layer must be 1-3")
         let code = (color << 4) | mode
-        return [
+        return ledCommitPreamble() + [
             pad([0x03, 0xfe, 0xb0, layer, 0x08, 0, 0, 0, 0, 0, 0x01, 0, code]),
             pad([0x03, 0xfd, 0xfe, 0xff]),
         ]
